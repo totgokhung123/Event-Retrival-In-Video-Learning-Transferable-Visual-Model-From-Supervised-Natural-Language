@@ -1,0 +1,12 @@
+# Ignore model và video lớn
+*.pt
+*.mp4
+
+# Ignore thư viện underthesea đã clone
+underthesea/
+
+# (Tuỳ chọn) ignore các file build/IDE/temp
+__pycache__/
+*.pyc
+.vscode/
+.idea/
