@@ -1,0 +1,62 @@
+[
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\10370.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\38433.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\38067.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\37968.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\37898.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\3789.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\37648.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\37408.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\37348.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\38772.jpg",
+    "similarity": NaN,
+    "violence_prob": NaN,
+    "nonviolence_prob": NaN
+  }
+]

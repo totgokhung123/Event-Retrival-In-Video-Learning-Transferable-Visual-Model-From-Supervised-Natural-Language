@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Phát Video</title>
+</head>
+<body>
+    <h1>Video Bắt đầu từ Khung {{ frameidx }}</h1>
+    <video id="video-player" width="640" controls>
+        <source src="{{ url_for('serve_video') }}" type="video/mp4">
+        Trình duyệt của bạn không hỗ trợ video.
+    </video>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const frameIdx = parseInt("{{ frameidx }}");
+            const videoPlayer = document.getElementById("video-player");
+
+            videoPlayer.currentTime = frameIdx / 25; 
+        });
+    </script>
+</body>
+</html>

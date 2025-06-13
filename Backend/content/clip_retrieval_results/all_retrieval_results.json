@@ -1,0 +1,49 @@
+{
+  "sexual content": {
+    "query": "sexual content",
+    "finetuned_results": [
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\10370.jpg",
+        "similarity": NaN
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\38433.jpg",
+        "similarity": NaN
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\38067.jpg",
+        "similarity": NaN
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\37968.jpg",
+        "similarity": NaN
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\37898.jpg",
+        "similarity": NaN
+      }
+    ],
+    "original_results": [
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\49347.jpg",
+        "similarity": 0.2524479925632477
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\17222.jpg",
+        "similarity": 0.24273309111595154
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\40530.jpg",
+        "similarity": 0.24153068661689758
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\18537.jpg",
+        "similarity": 0.2398548275232315
+      },
+      {
+        "path": "E:\\Đồ án chuyên ngành\\testing\\segment_Video_1\\9384.jpg",
+        "similarity": 0.23881205916404724
+      }
+    ]
+  }
+}

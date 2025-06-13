@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Search - Truy vấn sự kiện trong video</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #dd4800;
+            --dark-bg: #222;
+            --card-bg: #2a2a2a;
+            --text-color: #f0f0f0;
+            --border-color: #444;
+        }
+        
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background-color: var(--dark-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 0;
+        }
+        
+        .navbar-brand {
+            color: var(--primary-color);
+            font-weight: bold;
+            font-size: 24px;
+        }
+        
+        .search-form {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-primary:hover {
+            background-color: #c13d00;
+            border-color: #c13d00;
+        }
+        
+        .video-card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s ease;
+        }
+        
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .video-thumbnail {
+            position: relative;
+            overflow: hidden;
+            height: 200px;
+        }
+        
+        .video-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .video-info {
+            padding: 15px;
+        }
+        
+        .video-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+        
+        .video-play-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(221, 72, 0, 0.8);
+            color: white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .video-thumbnail:hover .video-play-btn {
+            opacity: 1;
+        }
+        
+        .frame-container {
+            display: flex;
+            overflow-x: auto;
+            gap: 10px;
+            padding: 10px 0;
+        }
+        
+        .frame-item {
+            position: relative;
+            flex: 0 0 auto;
+            width: 160px;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+        
+        .frame-item:hover {
+            border-color: var(--primary-color);
+        }
+        
+        .frame-item img {
+            width: 100%;
+            height: 90px;
+            object-fit: cover;
+        }
+        
+        .frame-info {
+            font-size: 12px;
+            padding: 5px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            text-align: center;
+        }
+        
+        .confidence-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 10px;
+            padding: 2px 6px;
+            font-size: 10px;
+        }
+        
+        .modal-content {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+        }
+        
+        .modal-header {
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .modal-footer {
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner-border {
+            color: var(--primary-color);
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 30px;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .video-card {
+                margin-bottom: 20px;
+            }
+            
+            .video-thumbnail {
+                height: 150px;
+            }
+        }
+
+        /* Upload button */
+        .upload-section {
+            margin-bottom: 20px;
+        }
+
+        .upload-btn {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-btn:hover {
+            background-color: rgba(221, 72, 0, 0.2);
+        }
+
+        .upload-btn i {
+            font-size: 24px;
+            margin-right: 10px;
+            color: var(--primary-color);
+        }
+
+        /* Progress bar */
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress {
+            height: 10px;
+            background-color: var(--card-bg);
+            border-radius: 5px;
+        }
+
+        .progress-bar {
+            background-color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <a class="navbar-brand" href="/video_search">
+                <i class="fas fa-video me-2"></i> Video Search
+            </a>
+            <button class="btn btn-outline-light ms-auto" onclick="window.location.href='/frame_search'">
+                <i class="fas fa-th-large me-1"></i> Chế độ xem frame
+            </button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Upload section -->
+        <div class="upload-section">
+            <form id="video-upload-form" enctype="multipart/form-data">
+                <label for="video-input" class="upload-btn w-100">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>Tải lên video mới</span>
+                    <input type="file" id="video-input" name="video" accept="video/*" hidden>
+                </label>
+            </form>
+            
+            <!-- Progress bars -->
+            <div id="progress-video-container" class="progress-container">
+                <p>Đang trích xuất frames từ video...</p>
+                <div class="progress mb-2">
+                    <div id="progress-video" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div id="progress-json-container" class="progress-container">
+                <p>Đang xử lý JSON dữ liệu các frames...</p>
+                <div class="progress mb-2">
+                    <div id="progress-json" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search tabs -->
+        <ul class="nav nav-tabs mb-3" id="searchTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="text-tab" data-bs-toggle="tab" data-bs-target="#text-search" type="button" role="tab" aria-controls="text-search" aria-selected="true">
+                    <i class="fas fa-search me-1"></i> Tìm kiếm bằng văn bản
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="image-tab" data-bs-toggle="tab" data-bs-target="#image-search" type="button" role="tab" aria-controls="image-search" aria-selected="false">
+                    <i class="fas fa-image me-1"></i> Tìm kiếm bằng hình ảnh
+                </button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="searchTabsContent">
+            <!-- Text search tab -->
+            <div class="tab-pane fade show active" id="text-search" role="tabpanel" aria-labelledby="text-tab">
+                <div class="search-form">
+                    <form id="searchForm">
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label for="query" class="form-label">Truy vấn mô tả</label>
+                                <input type="text" class="form-control" id="query" name="query" placeholder="Nhập mô tả của sự kiện...">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="keyword" class="form-label">Từ khóa</label>
+                                <input type="text" class="form-control" id="keyword" name="keyword" placeholder="Nhập từ khóa cần tìm...">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="min_confidence" class="form-label">Độ chính xác tối thiểu: <span id="confidenceValue">0</span></label>
+                                <input type="range" class="form-range" id="min_confidence" name="min_confidence" min="0" max="1" step="0.01" value="0" oninput="document.getElementById('confidenceValue').textContent = this.value">
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between mt-3">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search me-1"></i> Tìm kiếm
+                            </button>
+                            <button type="button" class="btn btn-outline-light" id="resetBtn">
+                                <i class="fas fa-redo me-1"></i> Làm mới
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Image search tab -->
+            <div class="tab-pane fade" id="image-search" role="tabpanel" aria-labelledby="image-tab">
+                <div class="search-form">
+                    <ul class="nav nav-pills mb-3" id="imageSearchTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="device-tab" data-bs-toggle="pill" data-bs-target="#device-search" type="button" role="tab" aria-controls="device-search" aria-selected="true">
+                                <i class="fas fa-laptop me-1"></i> Từ thiết bị
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="url-tab" data-bs-toggle="pill" data-bs-target="#url-search" type="button" role="tab" aria-controls="url-search" aria-selected="false">
+                                <i class="fas fa-globe me-1"></i> Từ URL
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content" id="imageSearchTabsContent">
+                        <!-- Device image search -->
+                        <div class="tab-pane fade show active" id="device-search" role="tabpanel" aria-labelledby="device-tab">
+                            <form id="deviceImageForm" method="POST" action="/search_video_frames" enctype="multipart/form-data">
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <label for="image_files" class="form-label">Chọn hình ảnh từ thiết bị</label>
+                                        <input type="file" class="form-control" id="image_files" name="image_files" accept="image/*" multiple>
+                                        <input type="hidden" name="search_type" value="image">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="image_top_k" class="form-label">Số lượng kết quả</label>
+                                        <input type="number" class="form-control" id="image_top_k" name="top_k" value="3" min="1" max="10">
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-3">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search me-1"></i> Tìm kiếm
+                                    </button>
+                                    <button type="reset" class="btn btn-outline-light">
+                                        <i class="fas fa-redo me-1"></i> Làm mới
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <!-- URL image search -->
+                        <div class="tab-pane fade" id="url-search" role="tabpanel" aria-labelledby="url-tab">
+                            <form id="urlImageForm" method="POST" action="/search_video_frames" enctype="multipart/form-data">
+                                <div class="row g-3">
+                                    <div class="col-md-8">
+                                        <label for="image_url" class="form-label">URL hình ảnh</label>
+                                        <input type="text" class="form-control" id="image_url" name="image_url" placeholder="Nhập URL hình ảnh...">
+                                        <input type="hidden" name="search_type" value="image">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="url_top_k" class="form-label">Số lượng kết quả</label>
+                                        <input type="number" class="form-control" id="url_top_k" name="top_k" value="3" min="1" max="10">
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-3">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search me-1"></i> Tìm kiếm
+                                    </button>
+                                    <button type="reset" class="btn btn-outline-light">
+                                        <i class="fas fa-redo me-1"></i> Làm mới
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loader" id="searchLoader">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Đang tìm kiếm...</p>
+        </div>
+
+        <div id="searchResults" class="row"></div>
+        
+        <div id="videoList" class="row"></div>
+    </div>
+    
+    <!-- Video Modal -->
+    <div class="modal fade" id="videoModal" tabindex="-1" aria-labelledby="videoModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="videoModalTitle">Video Player</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div id="videoLoading" style="display: none;">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p>Đang tải video...</p>
+                    </div>
+                    <video id="videoPlayer" class="w-100" controls>
+                        <source src="" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Lấy danh sách video khi trang được tải
+            fetchVideoList();
+            
+            // Xử lý form tìm kiếm văn bản
+            document.getElementById('searchForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                searchVideos();
+            });
+            
+            // Xử lý form tìm kiếm hình ảnh từ thiết bị
+            document.getElementById('deviceImageForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                searchVideosByImage('device');
+            });
+            
+            // Xử lý form tìm kiếm hình ảnh từ URL
+            document.getElementById('urlImageForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                searchVideosByImage('url');
+            });
+            
+            // Xử lý nút reset
+            document.getElementById('resetBtn').addEventListener('click', function() {
+                document.getElementById('searchForm').reset();
+                document.getElementById('confidenceValue').textContent = '0';
+                document.getElementById('searchResults').innerHTML = '';
+                fetchVideoList();
+            });
+
+            // Xử lý upload video
+            document.getElementById("video-input").addEventListener("change", function () {
+                const formData = new FormData();
+                formData.append("video", this.files[0]);
+                
+                const progressVideoBar = document.getElementById("progress-video");
+                const progressJSONBar = document.getElementById("progress-json");
+                
+                const videoContainer = document.getElementById("progress-video-container");
+                const jsonContainer = document.getElementById("progress-json-container");
+                
+                videoContainer.style.display = "block";
+                progressVideoBar.style.width = "0%";
+                
+                // Kết nối Server-Sent Events (SSE)
+                const eventSource = new EventSource("/upload-video");
+                
+                eventSource.onmessage = function (event) {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.step === "extracting_frames") {
+                        progressVideoBar.style.width = data.progress + "%";
+                        if (data.progress === 100) {
+                            videoContainer.style.display = "none";
+                            jsonContainer.style.display = "block";
+                        }
+                    } else if (data.step === "processing_json") {
+                        progressJSONBar.style.width = data.progress + "%";
+                        if (data.progress === 100) {
+                            jsonContainer.style.display = "none";
+                            alert("Xử lý thành công tất cả các bước!");
+                            eventSource.close();
+                            fetchVideoList(); // Refresh video list
+                        }
+                    } else if (data.step === "completed") {
+                        eventSource.close();
+                        alert("Xử lý video và frames hoàn thành!");
+                        fetchVideoList(); // Refresh video list
+                    } else if (data.error) {
+                        alert(`Lỗi: ${data.error}`);
+                        eventSource.close();
+                    }
+                };
+                
+                fetch("/upload-video", { 
+                    method: "POST", 
+                    body: formData 
+                });
+            });
+        });
+        
+        // Hàm lấy danh sách video
+        function fetchVideoList() {
+            document.getElementById('videoList').innerHTML = '';
+            document.getElementById('searchLoader').style.display = 'block';
+            
+            fetch('/get_unique_videos')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('searchLoader').style.display = 'none';
+                    renderVideoList(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('searchLoader').style.display = 'none';
+                    document.getElementById('videoList').innerHTML = `
+                        <div class="col-12">
+                            <div class="no-results">
+                                <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
+                                <h4>Lỗi khi tải danh sách video</h4>
+                                <p>${error.message || 'Vui lòng thử lại sau.'}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Hàm hiển thị danh sách video
+        function renderVideoList(videos) {
+            const videoListContainer = document.getElementById('videoList');
+            
+            if (videos.length === 0) {
+                videoListContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="no-results">
+                            <i class="fas fa-video-slash fa-3x mb-3"></i>
+                            <h4>Không có video nào</h4>
+                            <p>Vui lòng tải lên video để bắt đầu.</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            videos.forEach(video => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'col-md-4 mb-4';
+                
+                // Lấy tên file thumbnail từ đường dẫn đầy đủ
+                const thumbnailPath = video.thumbnail;
+                const thumbnailFilename = thumbnailPath.split('\\').pop().split('/').pop();
+                
+                videoCard.innerHTML = `
+                    <div class="video-card">
+                        <div class="video-thumbnail">
+                            <img src="/frames/${thumbnailFilename}" alt="${video.name}" onerror="this.src='https://via.placeholder.com/300x200?text=Video+Thumbnail'">
+                            <div class="video-play-btn" onclick="playVideo('${video.path}', '${video.name}')">
+                                <i class="fas fa-play"></i>
+                            </div>
+                        </div>
+                        <div class="video-info">
+                            <div class="video-title">${video.name}</div>
+                            <button class="btn btn-sm btn-primary" onclick="playVideo('${video.path}', '${video.name}')">
+                                <i class="fas fa-play me-1"></i> Xem video
+                            </button>
+                        </div>
+                    </div>
+                `;
+                videoListContainer.appendChild(videoCard);
+            });
+        }
+        
+        // Hàm tìm kiếm video bằng văn bản
+        function searchVideos() {
+            const formData = new FormData(document.getElementById('searchForm'));
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('videoList').innerHTML = '';
+            document.getElementById('searchLoader').style.display = 'block';
+            
+            fetch('/search_video_frames', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('searchLoader').style.display = 'none';
+                    renderSearchResults(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('searchLoader').style.display = 'none';
+                    document.getElementById('searchResults').innerHTML = `
+                        <div class="col-12">
+                            <div class="no-results">
+                                <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
+                                <h4>Lỗi khi tìm kiếm</h4>
+                                <p>${error.message || 'Vui lòng thử lại sau.'}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Hàm tìm kiếm video bằng hình ảnh
+        function searchVideosByImage(type) {
+            let formData;
+            if (type === 'device') {
+                formData = new FormData(document.getElementById('deviceImageForm'));
+            } else {
+                formData = new FormData(document.getElementById('urlImageForm'));
+            }
+            
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('videoList').innerHTML = '';
+            document.getElementById('searchLoader').style.display = 'block';
+            
+            fetch('/search_video_frames', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('searchLoader').style.display = 'none';
+                    renderSearchResults(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('searchLoader').style.display = 'none';
+                    document.getElementById('searchResults').innerHTML = `
+                        <div class="col-12">
+                            <div class="no-results">
+                                <i class="fas fa-exclamation-circle fa-3x mb-3"></i>
+                                <h4>Lỗi khi tìm kiếm</h4>
+                                <p>${error.message || 'Vui lòng thử lại sau.'}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Hàm hiển thị kết quả tìm kiếm
+        function renderSearchResults(results) {
+            const searchResultsContainer = document.getElementById('searchResults');
+            
+            if (results.length === 0) {
+                searchResultsContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="no-results">
+                            <i class="fas fa-search fa-3x mb-3"></i>
+                            <h4>Không tìm thấy kết quả</h4>
+                            <p>Vui lòng thử lại với từ khóa khác.</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            results.forEach(video => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'col-12 mb-4';
+                
+                let framesHTML = '';
+                video.frames.forEach(frame => {
+                    const confidencePercent = Math.round(frame.confidence * 100);
+                    
+                    // Lấy tên file từ đường dẫn đầy đủ
+                    const framePath = frame.path;
+                    const frameFilename = framePath.split('\\').pop().split('/').pop();
+                    
+                    framesHTML += `
+                        <div class="frame-item" onclick="playVideoAtFrame('${video.path}', '${video.name}', ${frame.frameidx})">
+                            <div class="confidence-badge">${confidencePercent}%</div>
+                            <img src="/frames/${frameFilename}" alt="Frame ${frame.frameidx}">
+                            <div class="frame-info">Frame ${frame.frameidx}</div>
+                        </div>
+                    `;
+                });
+                
+                videoCard.innerHTML = `
+                    <div class="video-card">
+                        <div class="video-info">
+                            <div class="video-title">${video.name}</div>
+                            <p class="text-muted">Top 3 frame phù hợp nhất:</p>
+                        </div>
+                        <div class="frame-container">
+                            ${framesHTML}
+                        </div>
+                        <div class="video-info">
+                            <button class="btn btn-sm btn-primary" onclick="playVideo('${video.path}', '${video.name}')">
+                                <i class="fas fa-play me-1"></i> Xem toàn bộ video
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                searchResultsContainer.appendChild(videoCard);
+            });
+        }
+        
+        // Hàm phát video
+        function playVideo(videoPath, videoName) {
+            const videoModal = new bootstrap.Modal(document.getElementById('videoModal'));
+            const videoPlayer = document.getElementById('videoPlayer');
+            const videoModalTitle = document.getElementById('videoModalTitle');
+            
+            videoModalTitle.textContent = videoName;
+            videoPlayer.querySelector('source').src = videoPath;
+            videoPlayer.load();
+            
+            videoModal.show();
+            videoPlayer.play();
+        }
+        
+        // Hàm phát video tại frame cụ thể
+        function playVideoAtFrame(videoPath, videoName, frameIdx) {
+            const videoModal = new bootstrap.Modal(document.getElementById('videoModal'));
+            const videoPlayer = document.getElementById('videoPlayer');
+            const videoModalTitle = document.getElementById('videoModalTitle');
+            
+            // Hiển thị loading
+            document.getElementById('videoLoading').style.display = 'block';
+            
+            videoModalTitle.textContent = `${videoName} - Frame ${frameIdx}`;
+            videoPlayer.querySelector('source').src = videoPath;
+            videoPlayer.load();
+            
+            videoModal.show();
+            
+            // Đặt thời gian video sau khi video đã sẵn sàng
+            videoPlayer.addEventListener('loadedmetadata', function() {
+                document.getElementById('videoLoading').style.display = 'none';
+                videoPlayer.currentTime = frameIdx / 25; // Giả sử 25 fps
+                videoPlayer.play();
+            }, { once: true });
+        }
+        
+        // Đóng video khi modal đóng
+        document.getElementById('videoModal').addEventListener('hidden.bs.modal', function () {
+            document.getElementById('videoPlayer').pause();
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Event Query Interface</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button id="toggleSidebar" class="sidebar-toggle">
+          <i data-lucide="menu"></i>
+        </button>
+        <h1 class="sidebar-title">Video Event Query</h1>
+      </div>
+
+      <div class="sidebar-content">
+        <nav class="sidebar-nav">
+          <button class="nav-btn active" data-tab="library">
+            <i data-lucide="video"></i>
+            <span>Library</span>
+          </button>
+          <button class="nav-btn" data-tab="search">
+            <i data-lucide="search"></i>
+            <span>Search</span>
+          </button>
+          <button class="nav-btn" data-tab="upload">
+            <i data-lucide="upload"></i>
+            <span>Upload</span>
+          </button>
+          <button class="nav-btn" data-tab="history">
+            <i data-lucide="history"></i>
+            <span>History</span>
+          </button>
+          <button class="nav-btn" data-tab="settings">
+            <i data-lucide="settings"></i>
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        <div class="video-library" id="videoLibrary">
+          <!-- Video items will be added here by JavaScript -->
+        </div>
+      </div>
+
+      <div class="user-profile">
+        <div class="avatar">
+          <span>AV</span>
+        </div>
+        <div class="user-info">
+          <p class="user-name">Analyst View</p>
+          <p class="user-role">Advanced</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="main-header">
+        <div class="video-info">
+          <h1 id="videoTitle">Video Event Query</h1>
+          <p id="videoDetails" class="video-details"></p>
+        </div>
+        <div class="search-panel">
+          <div class="search-input-wrapper">
+            <i data-lucide="search"></i>
+            <input type="text" id="searchInput" placeholder="Search events...">
+          </div>
+          <button id="showFilters" class="filter-btn">
+            <i data-lucide="filter"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="content-container">
+        <div class="video-container">
+          <div class="video-player-wrapper">
+            <div id="videoPlayer" class="video-player">
+              <div class="video-placeholder" id="videoPlaceholder">
+                <div class="placeholder-icon">
+                  <i data-lucide="play"></i>
+                </div>
+                <h3>No Video Selected</h3>
+                <p>Select a video from your library to begin analysis</p>
+              </div>
+              <video id="videoElement"></video>
+              
+              <div class="video-controls">
+                <button id="skipBack" class="control-btn">
+                  <i data-lucide="skip-back"></i>
+                </button>
+                <button id="playPause" class="play-btn">
+                  <i data-lucide="play"></i>
+                </button>
+                <button id="skipForward" class="control-btn">
+                  <i data-lucide="skip-forward"></i>
+                </button>
+                <div id="timeDisplay" class="time-display">0:00 / 0:00</div>
+                <div class="spacer"></div>
+                <button id="fullscreen" class="control-btn">
+                  <i data-lucide="maximize"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="timeline-container">
+            <div class="timeline" id="timeline">
+              <!-- Timeline markers will be added by JavaScript -->
+            </div>
+          </div>
+        </div>
+
+        <div class="event-list-container">
+          <div class="event-list" id="eventList">
+            <!-- Events will be added by JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Dialog Modal -->
+    <div class="modal" id="filtersModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Filter Events</h2>
+          <button id="closeModal" class="close-btn">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="filter-group">
+            <label>Event Category</label>
+            <div class="checkbox-group" id="categoryFilters">
+              <!-- Categories will be added by JavaScript -->
+            </div>
+          </div>
+          <div class="filter-group">
+            <label>Confidence Level: <span id="confidenceValue">0.5</span></label>
+            <input type="range" id="confidenceSlider" min="0" max="1" step="0.05" value="0.5">
+          </div>
+          <div class="filter-group">
+            <label>Time Range</label>
+            <div class="range-slider" id="timeRangeSlider"></div>
+            <div class="range-values">
+              <span id="timeRangeStart">0:00</span>
+              <span id="timeRangeEnd">0:00</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="resetFilters" class="btn btn-text">Reset</button>
+          <button id="applyFilters" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="app.js"></script>
+</body>
+</html>

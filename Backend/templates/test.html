@@ -1,0 +1,319 @@
+<html>
+ <head>
+  <title>
+   Popup Image Details
+  </title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet"/>
+  <style>
+  
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .popup {
+            background-color: #222;
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            width: 80%;
+            max-width: 1200px;
+            height: 80%;
+            max-height: 800px;
+            position: relative;
+        }
+        .image-section {
+            position: relative;
+            width: 70%;
+            padding: 5px;
+            box-sizing: border-box;
+            background-color: #1A1A1A; /* Set background color */
+        }
+        .image-section img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 5px; /* Optional: Add rounded corners to the image */
+        }
+        .details {
+            padding: 20px;
+            width: 30%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-y: auto;
+            background-color: rgba(34, 34, 34, 0.8); /* Transparent background */
+        }
+        .details .metadata, .details .labels, .details .primitives {
+            margin-bottom: 20px;
+        }
+        .details .metadata div, .details .labels div, .details .primitives div {
+            margin-bottom: 5px;
+            padding: 10px;
+            background-color: #333333;
+            border: 1px solid #777;
+            border-radius: 5px;
+        }
+        .details .metadata div:last-child, .details .labels div:last-child, .details .primitives div:last-child {
+            margin-bottom: 0;
+        }
+        .toolbar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .toolbar i {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .toolbar i:hover {
+            background-color: rgba(255, 255, 255, 0.7);
+            color: #000;
+        }
+        .bottom-toolbar {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+        .bottom-toolbar i {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .bottom-toolbar i:hover {
+            background-color: rgba(255, 255, 255, 0.7);
+            color: #000;
+        }
+  </style>
+ </head>
+
+  <div class="overlay">
+   <div class="popup">
+    <div class="image-section">
+        <div >
+            <div class="toolbar">
+             <i class="fas fa-check">
+             </i>
+             <i class="fas fa-search">
+             </i>
+             <i class="fas fa-cog">
+             </i>
+             <i class="fas fa-times">
+             </i>
+        </div>
+        <div>
+            <img alt="Person speaking on stage with text in the background" src="https://storage.googleapis.com/a1aa/image/QIuT2Vre7eimaE20HHNb8RLkYUkc08FAHeTegpNA9KVHDRWPB.jpg"/>
+        </div>
+        <div class="bottom-toolbar">
+            <i class="fas fa-arrow-left">
+            </i>
+            <i class="fas fa-arrow-right">
+            </i>
+        </div>
+    </div>
+    </div>
+    <div class="details">
+     <div class="metadata">
+      <div>
+       metadata.size_bytes: 417390
+      </div>
+      <div>
+       metadata.mime_type: image/jpeg
+      </div>
+      <div>
+       metadata.width: 1280
+      </div>
+      <div>
+       metadata.height: 720
+      </div>
+      <div>
+       metadata.num_channels: 3
+      </div>
+     </div>
+     <div class="labels">
+      <div>
+       tags: 1
+      </div>
+      <div>
+       label tags: 0
+      </div>
+      <div>
+       ground_truth: 1
+      </div>
+      <div>
+       detections: 8
+      </div>
+     </div>
+     <div class="primitives">
+      <div>
+       id: 66c60dae18c42148a05be686
+      </div>
+      <div>
+       path: E:\THI\HE\keyframes\L01_V002\0079.jpg
+      </div>
+     </div>
+    </div>
+   </div>
+  </div>
+
+</html>
+
+
+
+
+
+
+
+
+
+
+
+<!-- <div class="modal " id="video-modal">
+    <h1>Video Bắt đầu từ Khung <span id="frameidx-display"></span></h1>
+    <video id="video-player" width="100%" controls>
+        <source src="" type="video/mp4">
+        Trình duyệt của bạn không hỗ trợ video.
+    </video>
+    
+    <div>
+        <button onclick="closeModal()">Đóng</button>
+    </div> 
+</div> -->
+<script>
+    document.querySelectorAll('.frame-link').forEach(link => {
+        link.addEventListener('click', function(event) {
+            event.preventDefault();
+            
+            const frameIdx = this.getAttribute('data-frameidx');
+            document.getElementById('frameidx-display').innerText = frameIdx;
+            
+            const videoPlayer = document.getElementById('video-player');
+            videoPlayer.querySelector('source').src = "/serve_video";
+            videoPlayer.load();
+            videoPlayer.currentTime = frameIdx / 25;
+            document.getElementById('video-modal').classList.add('show');
+            document.getElementById('overlay').classList.add('show');
+            document.querySelector('.center-content').classList.add('blur-background');
+        });
+    });
+    function closeModal() {
+        document.getElementById('video-modal').classList.remove('show');
+        document.getElementById('overlay').classList.remove('show');
+        document.querySelector('.center-content').classList.remove('blur-background');
+        const videoPlayer = document.getElementById('video-player');
+        videoPlayer.pause();
+        videoPlayer.currentTime = 0;
+    }
+
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--  
+<div class="overlay " id="overlay"></div>
+<div class="modal" id="image-modal">
+    <div style="display: flex; width: 100%;">
+
+        <div style="flex: 1; position: relative;">
+            <div style="position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between;">
+                <button class="tool-button">🔍</button> 
+                <button class="tool-button">⏻</button> 
+            </div>
+            <img id="popup-image" src="" alt="Popup Image" style="width: 100%; height: auto;">
+            <div style="position: absolute; bottom: 0; width: 100%; display: flex; justify-content: space-between;">
+                <button class="tool-button">💾</button> 
+                <button class="tool-button">✏️</button> 
+            </div>
+        </div>
+
+
+        <div style="flex: 1; overflow-y: auto; padding: 10px; border-left: 1px solid #ddd;">
+            <div id="image-details">
+                
+            </div>
+        </div>
+    </div>
+    <div style="text-align: center; margin-top: 10px;">
+        <button onclick="closeImageModal()">Đóng</button>
+    </div>
+</div>
+-->
+<script>
+    // Lấy thông tin chi tiết từ file JSON
+    let imageDetails = {};
+
+    async function fetchImageDetails() {
+        try {
+            const response = await fetch('output_samples.json');
+            imageDetails = await response.json();
+        } catch (error) {
+            console.error('Error loading image details:', error);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchImageDetails();
+
+        document.querySelectorAll('.frame-image-link').forEach(link => {
+            link.addEventListener('click', function(event) {
+                event.preventDefault();
+
+                const frameIdx = this.getAttribute('data-frameidx');
+                const imagePath = this.querySelector('img').src;
+
+                // Hiển thị hình ảnh
+                document.getElementById('popup-image').src = imagePath;
+
+                // Hiển thị thông tin chi tiết
+                const detailsContainer = document.getElementById('image-details');
+                detailsContainer.innerHTML = ''; // Xóa thông tin cũ
+
+                const details = imageDetails[frameIdx] || {};
+                for (const [key, value] of Object.entries(details)) {
+                    const detailDiv = document.createElement('div');
+                    detailDiv.style.marginBottom = '10px';
+                    detailDiv.innerHTML = `<strong>${key}:</strong> ${value}`;
+                    detailsContainer.appendChild(detailDiv);
+                }
+
+                document.getElementById('image-modal').classList.add('show');
+                document.getElementById('image-overlay').classList.add('show');
+                document.querySelector('.center-content').classList.add('blur-background');
+            });
+        });
+    });
+
+    function closeImageModal() {
+        document.getElementById('image-modal').classList.remove('show');
+        document.getElementById('image-overlay').classList.remove('show');
+        document.querySelector('.center-content').classList.remove('blur-background');
+    }
+</script>

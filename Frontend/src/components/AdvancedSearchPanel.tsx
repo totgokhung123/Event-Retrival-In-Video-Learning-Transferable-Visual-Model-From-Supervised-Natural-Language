@@ -1,0 +1,668 @@
+import React, { useState } from 'react';
+import { Search, Image, Mic, Upload, Sparkles, ChevronDown, ChevronUp, Settings, Zap, Eye } from 'lucide-react';
+import { useVideo } from '../context/VideoContext';
+import axios from 'axios';
+import { EventData } from '../types';
+
+const API_URL = 'http://localhost:5000/api';
+
+export const AdvancedSearchPanel = () => {
+  const { currentVideo, setEvents, activeSearchFilters, updateActiveSearchFilters } = useVideo();
+  const [searchType, setSearchType] = useState<'text' | 'image' | 'voice'>('text');
+  const [textQuery, setTextQuery] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  
+  // Detailed filter states - sử dụng filters từ context
+  const [filters, setFilters] = useState({
+    enableTextKeyword: activeSearchFilters.enableTextKeyword || false,
+    textKeyword: activeSearchFilters.textKeyword || '',
+    minTextConfidence: activeSearchFilters.minTextConfidence || 0.8,
+    enableObjectKeyword: activeSearchFilters.enableObjectKeyword || false,
+    objectKeyword: activeSearchFilters.objectKeyword || '',
+    minObjectConfidence: activeSearchFilters.minObjectConfidence || 0.8,
+    enableClipSimilarity: activeSearchFilters.enableClipSimilarity || false,
+    minSimilarity: activeSearchFilters.minSimilarity || 0.8,
+  });
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startVoiceRecording = () => {
+    setIsRecording(true);
+    setTimeout(() => {
+      setIsRecording(false);
+    }, 3000);
+  };
+
+  const updateFilters = (key: string, value: unknown): void => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  // Determine search method based on filters and search query
+  const determineSearchMethod = (): string => {
+    const { enableTextKeyword, enableObjectKeyword, enableClipSimilarity } = filters;
+    const hasSearchQuery = textQuery.trim().length > 0;
+    
+    // Case 7: Search Query + Object-Keyword + Text-Keyword
+    if (hasSearchQuery && enableTextKeyword && enableObjectKeyword) {
+      return 'text_object_keyword';
+    }
+    
+    // Case 6: Search Query + Object-Keyword
+    if (hasSearchQuery && enableObjectKeyword && !enableTextKeyword) {
+      return 'text_object';
+    }
+    
+    // Case 5: Only Object-Keyword
+    if (!hasSearchQuery && enableObjectKeyword && !enableTextKeyword) {
+      return 'object_only';
+    }
+    
+    // Case 4: Search Query + Text-Keyword
+    if (hasSearchQuery && enableTextKeyword && !enableObjectKeyword) {
+      return 'text_keyword';
+    }
+    
+    // Case 3: Only Text-Keyword
+    if (!hasSearchQuery && enableTextKeyword && !enableObjectKeyword) {
+      return 'keyword_only';
+    }
+    
+    // Case 2: Search with CLIP Similarity Threshold
+    if (hasSearchQuery && enableClipSimilarity) {
+      return 'text_adaptive';
+    }
+    
+    // Case 1: Default - just text
+    if (hasSearchQuery) {
+      return 'text_clip';
+    }
+    
+    // Fallback
+    return 'text_clip';
+  };
+
+  // Handle search submission
+  const handleSearch = async () => {
+    // Update the global context with current filter settings
+    updateActiveSearchFilters(filters);
+    
+    // Cho phép tìm kiếm khi có ít nhất một trong các trường: textQuery, textKeyword hoặc objectKeyword
+    if (searchType === 'text' && 
+        !textQuery && 
+        !(filters.enableTextKeyword && filters.textKeyword) && 
+        !(filters.enableObjectKeyword && filters.objectKeyword)) {
+      setSearchError('Please enter a search query or enable a keyword filter');
+      return;
+    }
+
+    if (!imageUrl && searchType === 'image') {
+      setSearchError('Please provide an image URL or upload an image');
+      return;
+    }
+
+    // Đặt state loading trước khi bắt đầu tìm kiếm
+    setIsSearching(true);
+    setSearchError(null);
+    
+    // Thêm một delay nhỏ để đảm bảo UI hiển thị trạng thái loading
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    try {
+      // Build search parameters based on search type and filters
+      const searchParams: Record<string, unknown> = {
+        top_k: 20, // Default number of results
+      };
+      
+      // Set specific confidence thresholds based on search method
+      const searchMethod = determineSearchMethod();
+      console.log("Selected search method:", searchMethod);
+      
+      // Luôn thiết lập cả 3 threshold để đảm bảo backend trả về đầy đủ thông tin confidence
+      searchParams.adaptive_threshold = filters.minSimilarity; // CLIP similarity threshold
+      searchParams.text_confidence = filters.minTextConfidence; // Text detection threshold
+      searchParams.object_confidence = filters.minObjectConfidence; // Object detection threshold
+      
+      // Thêm tham số để yêu cầu backend trả về đầy đủ thông tin confidence
+      searchParams.return_all_confidences = true;
+      
+      // Set search type and query based on input
+      if (searchType === 'text') {
+        searchParams.search_type = 'text';
+        const searchMethod = determineSearchMethod();
+        searchParams.search_method = searchMethod;
+        
+        // Set appropriate query text based on search method
+        if (searchMethod === 'keyword_only' && filters.enableTextKeyword) {
+          // Case 3: Only Text-Keyword
+          searchParams.query = filters.textKeyword || '';
+        } else if (searchMethod === 'object_only' && filters.enableObjectKeyword) {
+          // Case 5: Only Object-Keyword
+          searchParams.query = filters.objectKeyword || '';
+        } else if (searchMethod === 'text_object' && filters.enableObjectKeyword) {
+          // Case 6: Text + Object-Keyword
+          searchParams.query = textQuery;
+          searchParams.object = filters.objectKeyword || '';
+          console.log("Using object keyword:", filters.objectKeyword);
+        } else if (searchMethod === 'text_keyword' && filters.enableTextKeyword) {
+          // Case 4: Text + Text-Keyword
+          searchParams.query = textQuery;
+          searchParams.keyword = filters.textKeyword || '';
+          console.log("Using text keyword:", filters.textKeyword);
+        } else if (searchMethod === 'text_object_keyword') {
+          // Case 7: Combined - prioritize main search query
+          searchParams.query = textQuery;
+          searchParams.keyword = filters.textKeyword || '';
+          searchParams.object = filters.objectKeyword || '';
+          console.log("Using combined keywords - text:", filters.textKeyword, "object:", filters.objectKeyword);
+        } else {
+          // Other cases: use main search query
+          searchParams.query = textQuery;
+        }
+
+      } else if (searchType === 'image') {
+        searchParams.search_type = 'image';
+        searchParams.image_url = imageUrl;
+      }
+
+      // Call the API
+      console.log('Searching with params:', searchParams);
+      const response = await axios.post(`${API_URL}/search`, searchParams);
+      
+      // Type assertion for response data
+      interface SearchResponse {
+        events: EventData[];
+      }
+      
+      // Update the events in the video context to display the results
+      const responseData = response.data as SearchResponse;
+      if (responseData.events && responseData.events.length > 0) {
+        setEvents(responseData.events);
+      } else {
+        setSearchError('No results found. Try adjusting your search parameters.');
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchError('An error occurred during search. Please try again.');
+    } finally {
+      // Đảm bảo luôn reset state loading khi hoàn thành
+      setIsSearching(false);
+    }
+  };
+
+  // Handle clearing the search
+  const handleClearSearch = () => {
+    setTextQuery('');
+    setImageUrl('');
+    setIsRecording(false);
+    // Reset events in the video context
+    setEvents([]);
+    setSearchError(null);
+  };
+
+  // Custom checkbox component
+  const CustomCheckbox = ({ checked, onChange, label, icon, color = 'teal' }: {
+    id?: string; // Optional id
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    label: string;
+    icon: React.ReactNode;
+    color?: string;
+  }) => {
+    const colorClasses = {
+      teal: 'from-teal-500 to-cyan-500',
+      purple: 'from-purple-500 to-pink-500',
+      orange: 'from-orange-500 to-red-500'
+    };
+
+    return (
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => onChange(!checked)}
+            className={`w-5 h-5 rounded border-2 transition-all duration-300 flex items-center justify-center ${
+              checked
+                ? `bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses]} border-transparent shadow-lg`
+                : 'bg-slate-700 border-slate-600 hover:border-slate-500'
+            }`}
+          >
+            {checked && (
+              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+          {checked && (
+            <div className={`absolute inset-0 rounded bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses]} opacity-20 animate-pulse`}></div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {icon}
+          <label className="text-sm font-medium text-slate-300 cursor-pointer" onClick={() => onChange(!checked)}>
+            {label}
+          </label>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-gradient-to-b from-slate-800 to-slate-900">
+      {/* Advanced Search Section */}
+      <div className="p-4 border-b border-slate-700/50 backdrop-blur-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-lg">
+            <Sparkles size={16} className="text-white" />
+          </div>
+          <h2 className="text-lg font-semibold bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent">
+            Advanced Search
+          </h2>
+        </div>
+
+        {/* Search Type Tabs */}
+        <div className="flex gap-1 mb-4 bg-slate-700/50 backdrop-blur-sm rounded-xl p-1 border border-slate-600/30">
+          <button
+            onClick={() => setSearchType('text')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-sm font-medium transition-all duration-300 ${
+              searchType === 'text'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg transform scale-105'
+                : 'text-slate-400 hover:text-white hover:bg-slate-600/50'
+            }`}
+          >
+            <Search size={14} />
+            Text
+          </button>
+          <button
+            onClick={() => setSearchType('image')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-sm font-medium transition-all duration-300 ${
+              searchType === 'image'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg transform scale-105'
+                : 'text-slate-400 hover:text-white hover:bg-slate-600/50'
+            }`}
+          >
+            <Image size={14} />
+            Image
+          </button>
+          <button
+            onClick={() => setSearchType('voice')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 px-3 rounded-lg text-sm font-medium transition-all duration-300 ${
+              searchType === 'voice'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg transform scale-105'
+                : 'text-slate-400 hover:text-white hover:bg-slate-600/50'
+            }`}
+          >
+            <Mic size={14} />
+            Voice
+          </button>
+        </div>
+
+        {/* Search Content */}
+        <div className="space-y-4">
+          {searchType === 'text' && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-slate-300">
+                Search Query
+              </label>
+              <div className="relative group">
+                <input
+                  type="text"
+                  value={textQuery}
+                  onChange={(e) => setTextQuery(e.target.value)}
+                  placeholder="Describe what you're looking for..."
+                  className="w-full p-4 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 transition-all duration-300 group-hover:border-slate-500"
+                />
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-teal-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+              </div>
+              <p className="text-xs text-slate-400 flex items-center gap-2">
+                <Zap size={12} className="text-teal-400" />
+                e.g., "person crossing street", "red car stopping"
+              </p>
+            </div>
+          )}
+
+          {searchType === 'image' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-3">
+                  Image URL
+                </label>
+                <div className="relative group">
+                  <input
+                    type="url"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className="w-full p-4 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 transition-all duration-300"
+                  />
+                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-teal-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                </div>
+              </div>
+              
+              <div className="text-center">
+                <div className="inline-flex items-center gap-2 text-slate-400 text-sm">
+                  <div className="h-px bg-gradient-to-r from-transparent via-slate-600 to-transparent flex-1"></div>
+                  <span>or</span>
+                  <div className="h-px bg-gradient-to-r from-transparent via-slate-600 to-transparent flex-1"></div>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-3">
+                  Upload Image
+                </label>
+                <div className="relative group">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    id="image-upload"
+                  />
+                  <label
+                    htmlFor="image-upload"
+                    className="flex items-center justify-center gap-3 w-full p-6 border-2 border-dashed border-slate-600/50 rounded-xl cursor-pointer hover:border-teal-500/50 transition-all duration-300 bg-slate-700/20 hover:bg-slate-700/40 group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500/20 to-cyan-500/20 flex items-center justify-center group-hover:from-teal-500/30 group-hover:to-cyan-500/30 transition-all duration-300">
+                      <Upload size={16} className="text-teal-400" />
+                    </div>
+                    <span className="text-slate-300 font-medium">Choose image file</span>
+                  </label>
+                </div>
+              </div>
+              
+              {imageUrl && (
+                <div className="mt-4 relative group">
+                  <img
+                    src={imageUrl}
+                    alt="Search reference"
+                    className="w-full h-32 object-cover rounded-xl border border-slate-600/50"
+                  />
+                  <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {searchType === 'voice' && (
+            <div className="text-center space-y-6 py-4">
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <button
+                    onClick={startVoiceRecording}
+                    disabled={isRecording}
+                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
+                      isRecording
+                        ? 'bg-gradient-to-br from-red-500 to-pink-600 animate-pulse scale-110'
+                        : 'bg-gradient-to-br from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 hover:scale-110'
+                    }`}
+                  >
+                    <Mic size={28} className="text-white" />
+                  </button>
+                  {isRecording && (
+                    <div className="absolute inset-0 rounded-full border-4 border-red-400/30 animate-ping"></div>
+                  )}
+                </div>
+                <p className="text-sm text-slate-300 mt-4 font-medium">
+                  {isRecording ? 'Recording...' : 'Click to start recording'}
+                </p>
+              </div>
+              
+              {isRecording && (
+                <div className="flex justify-center">
+                  <div className="flex space-x-2">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-gradient-to-t from-teal-500 to-cyan-400 rounded-full animate-pulse"
+                        style={{
+                          height: `${Math.random() * 32 + 16}px`,
+                          animationDelay: `${i * 0.1}s`
+                        }}
+                      ></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
+              <Settings size={12} className="text-purple-400" />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-300">Advanced Filters</h3>
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="text-slate-400 hover:text-white transition-all duration-300 hover:scale-110"
+          >
+            {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
+
+        {showFilters && (
+          <div className="space-y-4 border border-slate-600/30 rounded-xl p-4 bg-gradient-to-br from-slate-700/20 to-slate-800/20 backdrop-blur-sm">
+            {/* Text-Keyword Matching */}
+            <div className="space-y-3 p-4 rounded-xl bg-slate-700/20 border border-slate-600/20 hover:border-slate-500/30 transition-all duration-300">
+              <CustomCheckbox
+                id="enableTextKeyword"
+                checked={filters.enableTextKeyword}
+                onChange={(checked) => updateFilters('enableTextKeyword', checked)}
+                label="Text-Keyword Matching"
+                icon={<Eye size={14} className="text-teal-400" />}
+                color="teal"
+              />
+              
+              {filters.enableTextKeyword && (
+                <div className="ml-8 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2 font-medium">Keyword:</label>
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        value={filters.textKeyword}
+                        onChange={(e) => updateFilters('textKeyword', e.target.value)}
+                        className="w-full p-3 bg-slate-700/50 border border-slate-600/50 rounded-lg text-xs focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 transition-all duration-300"
+                        placeholder="Enter keyword..."
+                      />
+                      <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-teal-500/5 to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2 font-medium">
+                      Min Text-Detection Confidence: 
+                      <span className="text-teal-400 font-semibold ml-1">
+                        {Math.round(filters.minTextConfidence * 100)}%
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={filters.minTextConfidence}
+                        onChange={(e) => updateFilters('minTextConfidence', parseFloat(e.target.value))}
+                        className="w-full h-2 bg-slate-600/50 rounded-lg appearance-none cursor-pointer slider-teal"
+                      />
+                      <div 
+                        className="absolute top-0 h-2 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg pointer-events-none"
+                        style={{ width: `${filters.minTextConfidence * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Object-Keyword Matching */}
+            <div className="space-y-3 p-4 rounded-xl bg-slate-700/20 border border-slate-600/20 hover:border-slate-500/30 transition-all duration-300">
+              <CustomCheckbox
+                id="enableObjectKeyword"
+                checked={filters.enableObjectKeyword}
+                onChange={(checked) => updateFilters('enableObjectKeyword', checked)}
+                label="Object-Keyword Matching"
+                icon={<Search size={14} className="text-purple-400" />}
+                color="purple"
+              />
+              
+              {filters.enableObjectKeyword && (
+                <div className="ml-8 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2 font-medium">Keyword:</label>
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        value={filters.objectKeyword}
+                        onChange={(e) => updateFilters('objectKeyword', e.target.value)}
+                        className="w-full p-3 bg-slate-700/50 border border-slate-600/50 rounded-lg text-xs focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all duration-300"
+                        placeholder="Enter object keyword..."
+                      />
+                      <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-500/5 to-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2 font-medium">
+                      Min Object-Detection Confidence: 
+                      <span className="text-purple-400 font-semibold ml-1">
+                        {Math.round(filters.minObjectConfidence * 100)}%
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={filters.minObjectConfidence}
+                        onChange={(e) => updateFilters('minObjectConfidence', parseFloat(e.target.value))}
+                        className="w-full h-2 bg-slate-600/50 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div 
+                        className="absolute top-0 h-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg pointer-events-none"
+                        style={{ width: `${filters.minObjectConfidence * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* CLIP Similarity Threshold */}
+            <div className="space-y-3 p-4 rounded-xl bg-slate-700/20 border border-slate-600/20 hover:border-slate-500/30 transition-all duration-300">
+              <CustomCheckbox
+                id="enableClipSimilarity"
+                checked={filters.enableClipSimilarity}
+                onChange={(checked) => updateFilters('enableClipSimilarity', checked)}
+                label="CLIP Similarity Threshold"
+                icon={<Zap size={14} className="text-orange-400" />}
+                color="orange"
+              />
+              
+              {filters.enableClipSimilarity && (
+                <div className="ml-8 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2 font-medium">
+                      Min Similarity: 
+                      <span className="text-orange-400 font-semibold ml-1">
+                        {Math.round(filters.minSimilarity * 100)}%
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={filters.minSimilarity}
+                        onChange={(e) => updateFilters('minSimilarity', parseFloat(e.target.value))}
+                        className="w-full h-2 bg-slate-600/50 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div 
+                        className="absolute top-0 h-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg pointer-events-none"
+                        style={{ width: `${filters.minSimilarity * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      
+        {/* Display error message if there is one */}
+        {searchError && (
+          <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+            <p className="text-sm text-red-300">{searchError}</p>
+          </div>
+        )}
+      
+        <div className="pt-6 flex justify-end gap-3">
+          <button
+            onClick={handleClearSearch}
+            className="px-4 py-2 border border-slate-600/50 rounded-lg text-sm hover:bg-slate-700/50 transition-all duration-300 text-slate-300"
+            disabled={isSearching}
+          >
+            Clear
+          </button>
+          <button 
+            onClick={handleSearch}
+            disabled={isSearching}
+            className={`px-6 py-2 rounded-lg text-sm text-white transition-all duration-300 shadow-lg font-medium ${
+              isSearching 
+                ? 'bg-slate-600 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 hover:shadow-teal-500/25'
+            }`}
+          >
+            {isSearching ? 'Searching...' : 'Search'}
+          </button>
+        </div>
+      </div>
+
+      {/* Results Summary */}
+      <div className="flex-1 p-4">
+        {!currentVideo ? (
+          <div className="flex items-center justify-center h-full text-center">
+            <div className="space-y-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center mx-auto">
+                <Eye size={24} className="text-slate-500" />
+              </div>
+              <p className="text-slate-500">
+                Select a video to see detected events
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-500/20 to-cyan-500/20 flex items-center justify-center mx-auto">
+              <Settings size={20} className="text-teal-400" />
+            </div>
+            <p className="text-sm text-slate-400">
+              Configure your search parameters above.
+              <br />
+              <span className="text-teal-400">Results will appear in the main timeline.</span>
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

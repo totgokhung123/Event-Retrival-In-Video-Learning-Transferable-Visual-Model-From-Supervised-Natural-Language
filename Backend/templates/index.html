@@ -1,0 +1,934 @@
+{% extends "index_snow_test_4.html" %}
+{% block title %}
+Search Top Frames
+{% endblock %}
+
+{% block content %}
+<style>
+    .frame-container {
+        position: relative;
+        display: inline-block;
+    }
+
+    .frame-checkbox {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        z-index: 10;
+        width: 20px;
+        height: 20px;
+        display: none; 
+        cursor: pointer;
+    }
+
+    .frame-container:hover .frame-checkbox {
+        display: block; /* Hiển thị checkbox */
+        border-color: rgba(255, 69, 0, 0.7);
+    }
+    /* Checkbox luôn hiển thị khi container có lớp 'checked' */
+    .frame-container.checked .frame-checkbox {
+        display: block;
+    }
+
+    .frame-gallery {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); 
+        /* Cột sẽ tự động lấp đầy container và mỗi ảnh có chiều rộng tối thiểu là 200px */
+        justify-items: center; 
+    }
+    
+    .frame-gallery img {
+        width: 100%; /* Ảnh sẽ chiếm toàn bộ chiều rộng của ô grid */
+        height: auto; 
+        cursor: pointer;
+        border-radius: 5px; 
+        transition: transform 0.3s ease-in-out;
+    }
+    
+    .frame-gallery img:hover {
+        transform: scale(1.05); 
+    }
+    .center-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+    }
+    /* Modal styles */
+    #overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: none;
+        z-index: 999;
+    }
+    .modal.show, #overlay.show {
+        display: block;
+    }
+    .modal {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        width: 70%;
+        height: 80%;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    
+    .modal.show {
+        display: flex;
+    }
+    /* Video player styles */
+
+    /* Style cho các thông tin chi tiết */
+    .info-field {
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+    }
+
+    /* Style cho ảnh */
+    #popup-image {
+        max-height: 100%;
+        width: 100%;
+        object-fit: cover;
+    }
+
+    /* Style cho sidebar chứa thông tin */
+    #frame-info {
+        overflow-y: auto;
+        max-height: 100%;
+        height: 100%;
+    }
+    .blur-background {
+        filter: blur(5px);
+    }
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 500;
+        background-color: rgba(0, 0, 0, 0.5); /* Hiệu ứng viền mờ đen */
+        display:none;
+        justify-content: center;
+        align-items: center;
+        backdrop-filter: blur(2px);
+    }  
+    .overlay.show {
+        display: block;
+    }
+    .popup {
+        background-color: #222;
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        width: 80%;
+        max-width: 1200px;
+        height: 80%;
+        max-height: 800px;
+        position: relative;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    }
+    
+    .image-section {
+        width: 100%;
+        background-color: #1A1A1A;
+        padding: 10px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        
+    }
+    .image-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .image-section img {
+        max-width: 100%;
+        max-height: 100%;
+        /* Giữ đúng tỷ lệ gốc của ảnh */
+    }
+    
+    .details {
+        width: 30%;
+        padding: 20px;
+        background-color: #242424;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        color: #d7d6d6 ;
+    }
+    
+    .details .metadata, 
+    .details .labels, 
+    .details .primitives {
+        margin-bottom: 10px;
+    }
+    
+    .details div > div {
+        margin-bottom: 5px;
+        padding: 10px;
+        background-color: #333333;
+        border: 1px solid #777;
+        border-radius: 5px;
+
+    }
+    
+    .toolbar {
+        position:absolute;
+        top: 5px; /* Khoảng cách từ trên xuống */
+        right: 10px;
+        display: flex;
+        gap: 10px;
+        z-index: 16;
+    }
+    
+    .toolbar i, .bottom-toolbar i {
+        background-color: rgba(177, 68, 18, 0.7);
+        padding: 10px;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    
+    .toolbar i:hover, .bottom-toolbar i:hover {
+        background-color: rgba(255, 255, 255, 0.7);
+        color: #000;
+    }
+    
+    .bottom-toolbar {
+        position: absolute;
+        bottom: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+    }
+    /* Đảm bảo bounding boxes và toolbar hiển thị phía trước ảnh */
+.bounding-boxes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10; /* Cao hơn ảnh */
+    pointer-events: none; /* Để không cản trở các sự kiện click lên ảnh */
+}
+
+.bounding-box {
+    position: absolute;
+    border: 2px solid rgba(255, 0, 0, 0.7);
+    z-index: 11; /* Bên trên container bounding-boxes */
+    pointer-events: none;
+}
+
+.bounding-box span {
+    position: absolute;
+    top: -1.5em;
+    left: 0;
+    background-color: rgba(255, 0, 0, 0.8);
+    color: white;
+    font-size: 12px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    z-index: 12; 
+    pointer-events: none;
+}
+    
+</style>
+<div class="border border-black/10 dark:border-white/10 p-5 rounded-md" style="padding: 10px">
+    <div x-data="{activepillstabs:'profile'}">
+        <ul class="flex flex-wrap text-sm font-medium text-center text-black/50">
+            <li class="mr-2" >
+                <a href="javascript:;" style="padding: 10px"
+                @click="activepillstabs = activepillstabs === 'profile' ? '' : 'profile'"
+                :class="activepillstabs === 'profile' ? 'text-white dark:text-black bg-black dark:bg-white' : 'text-black/40 dark:text-white/40 bg-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
+                class="inline-block rounded-lg px-4 py-3 flex">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path>
+                    </svg>
+                    Query by text
+                </a>
+            </li>
+            <li class="mr-2" >
+                <a href="javaScript:;" style="padding: 10px"
+                @click="activepillstabs = activepillstabs === 'dashboard' ? '' : 'dashboard'"
+                 :class="activepillstabs === 'dashboard' ? 'text-white dark:text-black bg-black dark:bg-white' : 'text-black/40 dark:text-white/40 bg-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'" 
+                 class="inline-block rounded-lg px-4 py-3 flex">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z"></path>
+                    </svg>
+                    Query by image
+                </a>
+            </li>
+            <li class="mr-2">
+                <a href="/video_search" style="padding: 10px"
+                class="inline-block rounded-lg px-4 py-3 flex text-black/40 dark:text-white/40 bg-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H216v96L183.36,120.73a16,16,0,0,0-19.72,0L136,144.73,104.64,120.73a16,16,0,0,0-19.72,0L40,152Zm0,144V172l57.36-41.15L128,154.58l26.64-23.73L216,172v28Z"></path>
+                    </svg>
+                    Video Search
+                </a>
+            </li>
+
+
+            <!-- <li class="mr-2" >
+                <a href="javascript:;" style="padding: 10px"
+                @click="activepillstabs = activepillstabs === 'keyword' ? '' : 'keyword'"
+                 :class="activepillstabs === 'keyword' ? 'text-white dark:text-black bg-black dark:bg-white' : 'text-black/40 dark:text-white/40 bg-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
+                :class="activepillstabs === '' ? 'text-white dark:text-black bg-black dark:bg-white' : 'text-black/40 dark:text-white/40 bg-transparent hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'"
+                class="inline-block rounded-lg px-4 py-3 flex">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M128,120a8,8,0,0,1,8,8v16h16a8,8,0,0,1,0,16H136v16a8,8,0,0,1-16,0V160H104a8,8,0,0,1,0-16h16V128A8,8,0,0,1,128,120ZM232,88V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V64A16,16,0,0,1,40,48H93.33a16.12,16.12,0,0,1,9.6,3.2L130.67,72H216A16,16,0,0,1,232,88ZM40,96H93.33l21.34-16L93.33,64H40Zm176-8H130.67l-27.74,20.8a16.12,16.12,0,0,1-9.6,3.2H40v88H216Z"></path>
+                    </svg>
+                    Search keyword
+                </a>
+            </li> -->
+        </ul>
+        <div class="tab-content mt-3 text-[13px]">
+            <div x-show="activepillstabs === 'profile'" class="">
+                <div style="display: flex;flex-direction: row">
+                    <form method="POST" action="/" style="width: 120%">
+                        <div style="display: flex;flex-direction: row">
+                            <input type="text" name="query" placeholder="Enter your query"
+                            class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                            >
+                            <input type="text" id="keyword" name="keyword" placeholder="Enter your keyword for text or object ..."
+                            class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                            >
+                            <input type="number" name="top_k" placeholder="Enter top K" style="width: 40%"
+                            class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                            required min="1">
+                            <button type="submit" class="btn py-2 px-5 text-[15px]">Search</button>            
+                        </div>  
+                        <div>
+                            <label for="min_confidence">Set Confidence:</label>
+                            <input type="range" style="background-color: rgb(221,72,0);" name="min_confidence" id="min_confidence" value="0" min="0" max="1" step="0.01" oninput="this.nextElementSibling.value = this.value">
+                            <output>0</output>
+                        </div>     
+                                                          
+                    </form>
+                    <form method="GET" action="/reset">
+                        <div style="display: flex;flex-direction: row">
+                            <button type="submit" class="btn py-2 px-5 text-[15px]">Reset</button>
+                        </div>   
+                    </form>
+                </div>     
+                
+            </div>
+            <div x-show="activepillstabs === 'dashboard'" class="">
+                <div x-data="{activebarwithicon:'profile'}">
+                    <ul class="text-sm text-center text-black/50 dark:text-white/50 divide-x shadow dark:shadow-white/10 divide-black/20 dark:divide-white/20 rounded-lg sm:flex w-full">
+                        <li class="w-full">
+                            <a href="javaScript:;" style="padding:10px" @click="activebarwithicon = 'profile'" :class="activebarwithicon === 'profile' ? 'text-white bg-black dark:bg-white dark:text-black' : 'text-black/40 bg-transparent hover:text-white hover:bg-black dark:text-white/40 dark:hover:text-white dark:hover:bg-white/5'" class="inline-flex w-full justify-center p-4 sm:rounded-l-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" style="padding-right: 3px" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                                    <path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM92.69,56l16,16H40V56ZM216,200H40V88H216Zm-88-88a8,8,0,0,1,8,8v16h16a8,8,0,0,1,0,16H136v16a8,8,0,0,1-16,0V152H104a8,8,0,0,1,0-16h16V120A8,8,0,0,1,128,112Z"></path>
+                                </svg>
+                                From device
+                            </a>
+                        </li>
+                        <li class="w-full">
+                            <a href="javaScript:;" style="padding:10px" @click="activebarwithicon = 'dashboard'" :class="activebarwithicon === 'dashboard' ? 'text-white bg-black dark:bg-white dark:text-black' : 'text-black/40 bg-transparent hover:text-white hover:bg-black dark:text-white/40 dark:hover:text-white dark:hover:bg-white/5'" class="inline-flex w-full justify-center p-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" style="padding-right: 3px" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                                    <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM101.63,168h52.74C149,186.34,140,202.87,128,215.89,116,202.87,107,186.34,101.63,168ZM98,152a145.72,145.72,0,0,1,0-48h60a145.72,145.72,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.79a161.79,161.79,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154.37,88H101.63C107,69.66,116,53.13,128,40.11,140,53.13,149,69.66,154.37,88Zm19.84,16h38.46a88.15,88.15,0,0,1,0,48H174.21a161.79,161.79,0,0,0,0-48Zm32.16-16H170.94a142.39,142.39,0,0,0-20.26-45A88.37,88.37,0,0,1,206.37,88ZM105.32,43A142.39,142.39,0,0,0,85.06,88H49.63A88.37,88.37,0,0,1,105.32,43ZM49.63,168H85.06a142.39,142.39,0,0,0,20.26,45A88.37,88.37,0,0,1,49.63,168Zm101.05,45a142.39,142.39,0,0,0,20.26-45h35.43A88.37,88.37,0,0,1,150.68,213Z"></path>
+                                </svg>
+                                From link Url
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="tab-content mt-3 text-[13px]">
+                        <div x-show="activebarwithicon === 'profile'" class="">
+                            <div style="display: flex;flex-direction: row">
+                                <form method="POST" action="/search_image" style="width:120%" enctype="multipart/form-data">
+                                    <div style="display: flex;flex-direction: row">
+                                        <input type="file" name="image_files" accept="image/*" multiple>
+                                        <input type="number" name="top_k" placeholder="Enter top K" 
+                                        class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                                        required min="1">
+                                        <button type="submit" class="btn py-2 px-5 text-[15px]">Search</button>
+                                    </div>
+                                </form>
+                                <form method="GET" action="/reset">
+                                    <div style="display: flex;flex-direction: row">
+                                        <button type="submit" class="btn py-2 px-5 text-[15px]">Reset</button>
+                                    </div>   
+                                </form>
+                            </div>
+                        </div>
+                        <div x-show="activebarwithicon === 'dashboard'" class="">
+                            <div style="display: flex;flex-direction: row">
+                                <form method="POST" action="/search_image" style="width:120%" enctype="multipart/form-data">
+                                    <div style="display: flex;flex-direction: row" >
+                                        <input type="text" name="image_url" placeholder="Enter image URL"
+                                        class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;">
+                                        <input type="number" name="top_k" placeholder="Enter top K" style="width:50%"
+                                        class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                                        required min="1">
+                                        <button type="submit" class="btn py-2 px-5 text-[15px]">Search</button>                       
+                                    </div>
+                                </form>
+                                <form method="GET" action="/reset">
+                                    <div style="display: flex;flex-direction: row">
+                                        <button type="submit" class="btn py-2 px-5 text-[15px]">Reset</button>
+                                    </div>   
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- <div x-show="activepillstabs === 'keyword'" class="">
+                <div style="display: flex;flex-direction: row">
+                    <form method="POST" action="/" style="width: 120%">
+                        <div style="display: flex;flex-direction: row">
+                            <input type="text" id="keyword" name="keyword" placeholder="Enter your keyword for text or object ..."
+                            class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                            required>
+                            <input type="number" name="top_k" placeholder="Enter top K" style="width: 40%"
+                            class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"
+                            required min="1">
+                            <button type="submit" class="btn py-2 px-5 text-[15px]">Search</button>                            
+                        </div>                        
+                    </form>
+                    <form method="GET" action="/reset">
+                        <div style="display: flex;flex-direction: row">
+                            <button type="submit" class="btn py-2 px-5 text-[15px]">Reset</button>
+                        </div>   
+                    </form>
+                </div>        
+            </div> -->
+        </div>
+    </div>    
+</div>
+<div style="padding-top: 10px;">
+    <input type="text" id="tag-name" placeholder="Nhập tên tag" style="width: 20%"
+    class="form-input py-2.5 px-4 w-full text-black dark:text-white border border-black/10 dark:border-white/10 rounded-lg placeholder:text-black/20 dark:placeholder:text-white/20 focus:border-black dark:focus:border-white/10 focus:ring-0 focus:shadow-none;"/>
+    <button id="save-tags-button" class="btn py-2 px-5 text-[15px]">Lưu Tag</button>
+    <form id="video-upload-form" enctype="multipart/form-data" method="POST" action="/upload-video">
+        <label for="video-input" class="inline-block rounded-lg px-4 py-3 flex cursor-pointer" 
+               style="color: #fff; background-color: rgb(221,72,0);">
+            <input type="file" id="video-input" name="video" accept="video/*" hidden>
+            <svg xmlns="http://www.w3.org/2000/svg" style="padding-right: 3px" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                <path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM92.69,56l16,16H40V56ZM216,200H40V88H216Zm-88-88a8,8,0,0,1,8,8v16h16a8,8,0,0,1,0,16H136v16a8,8,0,0,1-16,0V152H104a8,8,0,0,1,0-16h16V120A8,8,0,0,1,128,112Z"></path>
+            </svg>
+            Thêm video
+        </label>
+    </form>
+</div>
+<!-- Progress bar -->
+<div id="progress-video-container" style="display: none;">
+    <label>Đang trích xuất frames từ video...</label>
+    <progress id="progress-video" value="0" max="100" style="width: 100%;background-color:aqua"></progress>
+</div>
+
+<div id="progress-json-container" style="display: none;">
+    <label>Đang xử lý JSON dữ liệu các frames...</label>
+    <progress id="progress-json" value="0" max="100" style="width: 100%;background-color:rgb(255, 115, 0)"></progress>
+</div>
+
+<div class="center-content">
+    {% if top_frames %}
+        <div class="frame-gallery"  style="justify-content: space-between; padding: 10px">
+            {% for frame in top_frames %}
+            <div class="frame-container">
+                <input type="checkbox" class="frame-checkbox outline-Danger form-checkbox" style="color: rgba(255, 69, 0, 0.7)" data-frame="{{ frame }}" >
+                <a href="#" class="frame-link" data-frameidx="{{ frame.split('.')[0] }}" data-frame-src="{{ url_for('serve_frame', filename=frame) }}" onclick="openImageModal(this.getAttribute('data-frame-src'), this.getAttribute('data-frameidx'))">                   
+                    <img src="{{ url_for('serve_frame', filename=frame) }}" alt="{{ frame }}" >
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- <div class="overlay" id="overlay"></div> -->
+<div class="overlay" id="overlay">
+    <div class="popup">
+
+        <div class="image-section">            
+            <div class="toolbar">
+                <i  onclick="openVideoModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M164.44,105.34l-48-32A8,8,0,0,0,104,80v64a8,8,0,0,0,12.44,6.66l48-32a8,8,0,0,0,0-13.32ZM120,129.05V95l25.58,17ZM216,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM92.69,56l16,16H40V56ZM216,200H40V88H216Zm-88-88a8,8,0,0,1,8,8v16h16a8,8,0,0,1,0,16H136v16a8,8,0,0,1-16,0V152H104a8,8,0,0,1,0-16h16V120A8,8,0,0,1,128,112Z"></path>
+                    </svg>
+                </i>                    
+                <i onclick="closeImageModal()"> 
+                    <svg  xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                    <path  d="M165.66,101.66,139.31,128l26.35,26.34a8,8,0,0,1-11.32,11.32L128,139.31l-26.34,26.35a8,8,0,0,1-11.32-11.32L116.69,128,90.34,101.66a8,8,0,0,1,11.32-11.32L128,116.69l26.34-26.35a8,8,0,0,1,11.32,11.32ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"></path>
+                    </svg>
+                </i>
+                <!-- <i class="fas fa-times" onclick="closeImageModal()"></i> -->
+                
+            </div>
+            <div style="position: relative; display: inline-block; max-width: 100%; max-height: 100%;">
+                <img id="popup-image" alt="Popup Image" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                <div class="bounding-boxes" id="bounding-boxes"></div>
+            </div>
+            <div class="bottom-toolbar">
+                <i>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M200,32a8,8,0,0,0-8,8v69.23L72.43,34.45A15.95,15.95,0,0,0,48,47.88V208.12a16,16,0,0,0,24.43,13.43L192,146.77V216a8,8,0,0,0,16,0V40A8,8,0,0,0,200,32ZM64,207.93V48.05l127.84,80Z"></path>
+                    </svg>
+                </i>
+                <i>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                        <path d="M199.81,34a16,16,0,0,0-16.24.43L64,109.23V40a8,8,0,0,0-16,0V216a8,8,0,0,0,16,0V146.77l119.57,74.78A15.95,15.95,0,0,0,208,208.12V47.88A15.86,15.86,0,0,0,199.81,34ZM192,208,64.16,128,192,48.07Z"></path>
+                    </svg>
+                </i>
+                <input type="hidden" id="popup-frameidx" value="">
+            </div>
+        </div>
+
+       <div class="details">
+          <div class="metadata" id="metadata">
+             <!-- Metadata sẽ được chèn vào đây -->
+          </div>
+          <div class="labels" id="labels">
+             <!-- Labels sẽ được chèn vào đây -->
+          </div>
+          <div class="primitives" id="primitives">
+             <!-- Primitives sẽ được chèn vào đây -->
+          </div>
+          <div class="controls">
+            <label>
+                <input type="checkbox" style="border-color:#8b8585" class="form-checkbox outline-danger" id="toggle-bounding-box" onchange="toggleBoundingBoxVisibility()" />
+                Show Bounding Boxes
+            </label>
+          </div>
+       </div>
+    </div>
+</div>
+
+<!-- Popup Video Modal -->
+<div class="modal" id="video-modal">
+    <h1>Video Bắt đầu từ Khung <span id="frameidx-display"></span></h1>
+    <video id="video-player" width="100%" height="auto" style="max-height: calc(100% - 80px);border-radius: 5px;" controls>
+        <source src="" type="video/mp4">
+        Trình duyệt của bạn không hỗ trợ video.
+    </video>
+    <div>
+        <button onclick="closeModal()">Đóng</button>
+    </div> 
+</div>
+
+<script>
+    function openVideoModal() {
+        const frameIdx = document.getElementById('popup-frameidx').value;
+        document.getElementById('frameidx-display').innerText = frameIdx;
+        const videoPlayer = document.getElementById('video-player');
+        
+        // Hiển thị loading nếu có
+        if (document.getElementById('progress-video-container')) {
+            document.getElementById('progress-video-container').style.display = 'block';
+        }
+        
+        // Lấy đường dẫn video từ API
+        fetch(`/get_video_path/${frameIdx}`)
+            .then(response => response.json())
+            .then(data => {
+                if (document.getElementById('progress-video-container')) {
+                    document.getElementById('progress-video-container').style.display = 'none';
+                }
+                
+                if (data.error) {
+                    alert(`Lỗi: ${data.error}`);
+                    return;
+                }
+                
+                videoPlayer.querySelector('source').src = data.video_path;
+                videoPlayer.load();
+                
+                document.getElementById('video-modal').classList.add('show');
+                document.getElementById('overlay').classList.add('show');
+                
+                // Đặt thời gian video sau khi video đã sẵn sàng
+                videoPlayer.addEventListener('loadedmetadata', function() {
+                    videoPlayer.currentTime = frameIdx / 25;
+                    videoPlayer.play();
+                }, { once: true });
+            })
+            .catch(error => {
+                if (document.getElementById('progress-video-container')) {
+                    document.getElementById('progress-video-container').style.display = 'none';
+                }
+                console.error('Error:', error);
+                alert('Không thể tải video');
+            });
+    }
+    
+    function closeModal() {
+        document.getElementById('video-modal').classList.remove('show');
+        document.getElementById('overlay').classList.remove('show');
+        document.querySelector('.center-content').classList.remove('blur-background');
+        const videoPlayer = document.getElementById('video-player');
+        videoPlayer.pause();
+        videoPlayer.currentTime = 0;
+    }
+</script>
+<script>
+    function openImageModal(src, frameIdx) {
+        const popupImage = document.getElementById('popup-image');
+        popupImage.src = src;
+        document.getElementById('popup-frameidx').value = frameIdx;
+        fetch(`/get_frame_info/${frameIdx}`)
+            .then(response => response.json())
+            .then(data => {
+
+                document.getElementById('metadata').innerHTML = `
+                    <div><strong>Size:</strong> ${data.metadata.size_bytes} bytes</div>
+                    <div><strong>Width:</strong> ${data.metadata.width}px</div>
+                    <div><strong>Height:</strong> ${data.metadata.height}px</div>
+                `;
+                document.getElementById('labels').innerHTML = `
+                    <div><strong>Tags:</strong> ${data.tags.join(', ')}</div>
+                `;
+                document.getElementById('primitives').innerHTML = `
+                    <div><strong>ID:</strong> ${data.id}</div>
+                    <div><strong>Path:</strong> ${data.filepath}</div>
+                `;
+                popupImage.onload = function () {
+                    const container = document.querySelector('.bounding-boxes');
+                    while (container.firstChild) {
+                        container.removeChild(container.firstChild);
+                    }
+    
+                    // Lấy kích thước tự nhiên và hiển thị của ảnh
+                    const naturalWidth = popupImage.naturalWidth;
+                    const naturalHeight = popupImage.naturalHeight;
+                    const displayWidth = popupImage.clientWidth;
+                    const displayHeight = popupImage.clientHeight;
+    
+                    // Tính toán tỉ lệ co (scale) và offset nếu cần căn giữa ảnh
+                    const scale = Math.min(displayWidth / naturalWidth, displayHeight / naturalHeight);
+                    const offsetX = (displayWidth - naturalWidth * scale) / 2;
+                    const offsetY = (displayHeight - naturalHeight * scale) / 2;
+    
+                    // Đảm bảo bounding boxes được vẽ sau khi ảnh hoàn thành render
+                    setTimeout(() => {
+                        data.text_detections.detections.forEach(detection => {
+                            const { label, bounding_box } = detection;
+                            const [x, y, width, height] = bounding_box;
+    
+                            const box = document.createElement('div');
+                            box.className = 'bounding-box';
+                            box.style.left = `${offsetX + x * naturalWidth * scale}px`;
+                            box.style.top = `${offsetY + y * naturalHeight * scale}px`;
+                            box.style.width = `${width * naturalWidth * scale}px`;
+                            box.style.height = `${height * naturalHeight * scale}px`;
+    
+                            // Thêm nhãn vào trong bounding box
+                            const labelSpan = document.createElement('span');
+                            labelSpan.innerText = label;
+                            box.appendChild(labelSpan);
+    
+                            // Thêm bounding box vào container
+                            container.appendChild(box);
+                        });
+                    }, 50); // Chờ 50ms để đảm bảo ảnh đã được render
+                    setTimeout(() => {
+                        data.object_detections.detections.forEach(detection => {
+                            const { label, bounding_box } = detection;
+                            const [x, y, width, height] = bounding_box;
+    
+                            const box = document.createElement('div');
+                            box.className = 'bounding-box';
+                            box.style.left = `${offsetX + x * naturalWidth * scale}px`;
+                            box.style.top = `${offsetY + y * naturalHeight * scale}px`;
+                            box.style.width = `${width * naturalWidth * scale}px`;
+                            box.style.height = `${height * naturalHeight * scale}px`;
+    
+                            // Thêm nhãn vào trong bounding box
+                            const labelSpan = document.createElement('span');
+                            labelSpan.innerText = label;
+                            box.appendChild(labelSpan);
+    
+                            // Thêm bounding box vào container
+                            container.appendChild(box);
+                        });
+                    }, 50);
+                };
+            })
+            .catch(err => console.error('Error fetching frame info:', err));
+    
+        // Hiển thị overlay
+        document.getElementById('overlay').style.display = 'flex';
+    }
+    function toggleBoundingBoxVisibility() {
+        const container = document.querySelector('.bounding-boxes');
+        const isChecked = document.getElementById('toggle-bounding-box').checked;
+        if (container) {
+            container.style.display = isChecked ? 'block' : 'none';
+        }
+    }
+    function closeImageModal() {
+        document.getElementById('overlay').style.display = 'none';
+    }
+</script>
+<script>
+    document.getElementById("video-input").addEventListener("change", function () {
+        const formData = new FormData(document.getElementById("video-upload-form"));
+        const xhr = new XMLHttpRequest();
+    
+        const progressVideoBar = document.getElementById("progress-video");
+        const progressJSONBar = document.getElementById("progress-json");
+    
+        const videoContainer = document.getElementById("progress-video-container");
+        const jsonContainer = document.getElementById("progress-json-container");
+    
+        videoContainer.style.display = "block";
+        progressVideoBar.value = 0;
+    
+        // Kết nối Server-Sent Events (SSE)
+        const eventSource = new EventSource("/upload-video");
+    
+        eventSource.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+    
+            if (data.step === "extracting_frames") {
+                progressVideoBar.value = data.progress;
+                if (data.progress === 100) {
+                    videoContainer.style.display = "none";
+                    jsonContainer.style.display = "block";
+                }
+            } else if (data.step === "processing_json") {
+                progressJSONBar.value = data.progress;
+                if (data.progress === 100) {
+                    jsonContainer.style.display = "none";
+                    alert("Xử lý thành công tất cả các bước!");
+                    eventSource.close();
+                }
+            } else if (data.step === "completed") {
+                eventSource.close();
+                alert("Xử lý video và frames hoàn thành!");
+            } else if (data.error) {
+                alert(`Lỗi: ${data.error}`);
+                eventSource.close();
+            }
+        };
+    
+        fetch("/upload-video", { method: "POST", body: formData });
+    });
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const checkboxes = document.querySelectorAll(".frame-checkbox");
+        let lastCheckedIndex = null; 
+
+ 
+        function handleShiftClick(currentIndex, isChecked) {
+            if (lastCheckedIndex !== null) {
+ 
+                const start = Math.min(lastCheckedIndex, currentIndex);
+                const end = Math.max(lastCheckedIndex, currentIndex);
+                for (let i = start; i <= end; i++) {
+                    checkboxes[i].checked = isChecked;
+                    const frameContainer = checkboxes[i].closest(".frame-container");
+                    if (isChecked) {
+                        frameContainer.classList.add("checked");
+                    } else {
+                        frameContainer.classList.remove("checked");
+                    }
+                }
+            }
+        }
+
+        checkboxes.forEach((checkbox, index) => {
+            checkbox.addEventListener("change", function (event) {
+                const frameContainer = this.closest(".frame-container");
+                if (event.shiftKey && lastCheckedIndex !== null) {
+                    // Nếu Shift được nhấn, xử lý chọn dải checkbox
+                    handleShiftClick(index, this.checked);
+                } else {
+                    // Nếu không nhấn Shift, chỉ xử lý checkbox hiện tại
+                    if (this.checked) {
+                        frameContainer.classList.add("checked");
+                    } else {
+                        frameContainer.classList.remove("checked");
+                    }
+                }
+
+                lastCheckedIndex = index;
+            });
+        });
+    });
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const saveButton = document.getElementById("save-tags-button");
+        const checkboxes = document.querySelectorAll(".frame-checkbox");
+        const tagNameInput = document.getElementById("tag-name");
+
+        saveButton.addEventListener("click", async () => {
+            const selectedFrames = [];
+            const tagName = tagNameInput.value.trim();
+
+            // Thu thập danh sách các ảnh được chọn
+            checkboxes.forEach((checkbox) => {
+                if (checkbox.checked) {
+                    selectedFrames.push(checkbox.getAttribute("data-frame"));
+                }
+            });
+
+            // Kiểm tra tên tag và danh sách ảnh được chọn
+            if (!tagName) {
+                alert("Vui lòng nhập tên tag!");
+                return;
+            }
+            if (selectedFrames.length === 0) {
+                alert("Vui lòng chọn ít nhất một ảnh để lưu tag!");
+                return;
+            }
+
+            try {
+                const response = await fetch("/save_tags", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ tag: tagName, frames: selectedFrames }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert("Tags đã được lưu thành công!");
+
+                    // Nếu có URL chuyển hướng, điều hướng về trang đó
+                    if (data.redirect_url) {
+                        window.location.href = data.redirect_url;
+                    }
+                } else {
+                    alert(data.error || "Có lỗi xảy ra khi lưu Tags.");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Không thể kết nối với server.");
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block tag %}
+<ul x-data="tagMenu()" class="relative h-[calc(100vh-58px)] flex flex-col gap-1 overflow-y-auto overflow-x-hidden p-4 py-0" x-data="{ activeMenu: 'dashboard' }">
+    <li class="menu nav-item">
+        <a href="javaScript:;" class="nav-link group text-black dark:text-white" :class="{'active' : activeMenu === 'dashboard'}" @click="activeMenu === 'dashboard' ? activeMenu = null : activeMenu = 'dashboard'">
+            <div class="text-black/50 dark:text-white/20 w-4 h-4 flex items-center justify-center" :class="{'!rotate-90' : activeMenu === 'dashboard'}">
+                <svg width="6" height="10" viewBox="0 0 6 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M0.659675 9.35355C0.446775 9.15829 0.446775 8.84171 0.659675 8.64645L4.25 5.35355C4.4629 5.15829 4.4629 4.84171 4.25 4.64645L0.659675 1.35355C0.446776 1.15829 0.446776 0.841709 0.659675 0.646446C0.872575 0.451184 1.21775 0.451185 1.43065 0.646446L5.02098 3.93934C5.65967 4.52513 5.65968 5.47487 5.02098 6.06066L1.43065 9.35355C1.21775 9.54882 0.872574 9.54882 0.659675 9.35355Z" fill="currentcolor" />
+                </svg>
+            </div>
+            <div class="flex items-center">
+                <svg class="w-5 h-5" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4.20007 18.2C4.06372 17.4747 3.9967 16.738 4.00012 16C3.99854 13.5182 4.76721 11.0972 6.2002 9.07092C7.63318 7.04456 9.65967 5.51306 12.0001 4.6875V13.6875L4.20007 18.2Z" fill="black" fill-opacity="0.1" />
+                    <path d="M17 16V4C17 3.44772 16.5523 3 16 3C15.4477 3 15 3.44772 15 4V16C15 16.5523 15.4477 17 16 17C16.5523 17 17 16.5523 17 16Z" fill="currentcolor" />
+                    <path d="M5.11288 21.1336L5.11213 21.1341C4.88247 21.2667 4.71492 21.4852 4.64633 21.7414C4.62374 21.8257 4.6123 21.9127 4.6123 22C4.6123 22.0106 4.61247 22.0212 4.61281 22.0317C4.61804 22.1965 4.66392 22.3574 4.74638 22.5002C4.92504 22.8095 5.25511 23 5.6123 23C5.62784 23 5.64337 22.9996 5.65889 22.9989C5.81854 22.9915 5.97408 22.9459 6.11248 22.8659L6.11323 22.8655L26.8875 10.8659C27.1968 10.6873 27.3873 10.3572 27.3873 10C27.3873 9.98447 27.3869 9.96894 27.3862 9.95342C27.3788 9.79377 27.3332 9.63822 27.2532 9.49983C27.1206 9.27017 26.9021 9.10261 26.6459 9.03402C26.5616 9.01144 26.4746 9 26.3873 9C26.3767 9 26.3662 9.00017 26.3556 9.0005C26.1908 9.00573 26.0299 9.05162 25.8871 9.13407L5.11288 21.1336Z" fill="currentcolor" />
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M12.5009 14.5531L4.70089 19.0656C4.47132 19.1984 4.1984 19.2346 3.94216 19.1662C3.68592 19.0977 3.46735 18.9303 3.33454 18.7008C3.27789 18.6028 3.23827 18.496 3.21736 18.3849C3.21736 18.3849 2.99459 17.2005 3.00013 15.9954C3.00013 15.9954 2.99749 11.8678 5.38375 8.4935C5.38375 8.4935 7.77001 5.11918 11.6675 3.74445C11.9176 3.65622 12.1925 3.67097 12.4318 3.78545C12.671 3.89992 12.855 4.10475 12.9432 4.35486C12.9809 4.46172 13.0001 4.5742 13.0001 4.6875V13.6875C13.0001 14.0445 12.8099 14.3743 12.5009 14.5531ZM5.01273 16.5746L11.0001 13.1107V6.19572C11.0001 6.19572 8.61014 7.39503 7.01668 9.64828C7.01668 9.64828 4.9979 12.503 5.00011 16.0046C5.00011 16.0046 4.9988 16.2903 5.01273 16.5746Z" fill="currentcolor" />
+                    <path d="M10.5588 25.5608C8.00169 24.1059 6.51229 21.5688 6.51229 21.5688C6.37802 21.34 6.1584 21.174 5.90173 21.1072C5.8195 21.0858 5.73487 21.075 5.64991 21.075C5.63698 21.075 5.62406 21.0753 5.61115 21.0758C5.44642 21.0821 5.28582 21.1292 5.14365 21.2126C4.83778 21.3922 4.6499 21.7203 4.6499 22.075L4.64991 22.0779C4.65042 22.2549 4.6979 22.4286 4.78752 22.5813C6.54772 25.5797 9.56976 27.2991 9.56976 27.2991C12.5918 29.0186 16.0687 28.9998 16.0687 28.9998C19.5456 28.981 22.5489 27.2291 22.5489 27.2291C25.5522 25.4772 27.2799 22.4599 27.2799 22.4599C29.0077 19.4426 28.9985 15.9657 28.9985 15.9657C28.9893 12.4887 27.2457 9.48061 27.2457 9.48061C25.502 6.47249 22.4895 4.73644 22.4895 4.73644C19.477 3.00039 16 3 16 3C15.9389 3 15.878 3.00558 15.8181 3.01667C15.344 3.10435 15 3.51778 14.9999 3.99989C14.9999 4.01594 15.0003 4.03196 15.0011 4.04792C15.013 4.29624 15.1169 4.53122 15.2927 4.70702C15.4802 4.89458 15.7346 4.99997 15.9998 5H16.0002C18.942 5.00045 21.4909 6.4693 21.4909 6.4693C24.0399 7.93826 25.5153 10.4836 25.5153 10.4836C26.9907 13.0289 26.9985 15.9709 26.9985 15.9709C27.0063 18.913 25.5443 21.4661 25.5443 21.4661C24.0824 24.0191 21.5411 25.5016 21.5411 25.5016C18.9999 26.984 16.0579 26.9998 16.0579 26.9998C13.1159 27.0157 10.5588 25.5608 10.5588 25.5608Z" fill="currentcolor" />
+                </svg>
+                <span class="pl-1">Dashboard</span>
+            </div>
+        </a>
+        <ul x-cloak x-show="activeMenu === 'dashboard'" x-collapse class="sub-menu flex flex-col gap-1 text-black dark:text-white/80" >
+            {% for tag in tags %}
+            <li>                
+                <a href="{{ url_for('frame_search') }}?tag_name={{ tag }}" class="text-blue-500 hover:underline" style="justify-content: space-between">                                 
+                    <input type="checkbox" class="outline-Danger form-checkbox">
+                    <span>{{ tag }}</span>              
+                </a>  
+            </li>
+            {% endfor %}
+        </ul>
+    </li>
+</ul>
+
+<script>
+    // Hàm tải ảnh từ server khi chọn tag
+    function loadImagesForTag(tag) {
+        fetch(`/load-images?tag=${tag}`) 
+            .then(response => response.json())
+            .then(data => {
+                const gallery = document.getElementById('image-gallery');
+                gallery.innerHTML = ''; // Xóa các ảnh cũ trước khi tải mới
+
+                data.images.forEach(frame => {
+                    const frameContainer = document.createElement('div');
+                    frameContainer.className = 'frame-container';
+
+                    // Input checkbox
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'frame-checkbox outline-primary form-checkbox';
+                    checkbox.dataset.frame = frame;
+
+                    // Link chứa ảnh
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.className = 'frame-link';
+                    link.dataset.frameidx = frame.split('.')[0];
+
+                    // Ảnh
+                    const img = document.createElement('img');
+                    img.src = `/frames/${frame}`;
+                    img.alt = frame;
+                    img.className = 'w-full h-auto rounded shadow-md';
+
+                    link.appendChild(img);
+                    frameContainer.appendChild(checkbox);
+                    frameContainer.appendChild(link);
+
+                    gallery.appendChild(frameContainer);
+                });
+            })
+            .catch(error => console.error('Error loading images:', error));
+    }
+</script>
+<script>
+    function tagMenu() {
+        return {
+            activeMenu: null,
+            tags: [],
+            toggleMenu(menu) {
+                this.activeMenu = this.activeMenu === menu ? null : menu;
+            },
+            loadTags() {
+                // Tải danh sách tag từ backend
+                fetch('/get-tags')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.tags = data;
+                    })
+                    .catch(error => console.error('Error loading tags:', error));
+            },
+            init() {
+                this.loadTags(); 
+            }
+        };
+    }
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('tagMenu', tagMenu);
+    });
+</script>
+{% endblock %}

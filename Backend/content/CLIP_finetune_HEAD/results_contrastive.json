@@ -1,0 +1,62 @@
+[
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\3668.jpg",
+    "similarity": 0.19373606145381927,
+    "violence_prob": 0.053602978587150574,
+    "nonviolence_prob": 0.946397066116333
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\11009.jpg",
+    "similarity": 0.19294373691082,
+    "violence_prob": 0.23036636412143707,
+    "nonviolence_prob": 0.7696336507797241
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\51926.jpg",
+    "similarity": 0.18541443347930908,
+    "violence_prob": 0.924919068813324,
+    "nonviolence_prob": 0.07508089393377304
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\42358.jpg",
+    "similarity": 0.18368437886238098,
+    "violence_prob": 0.3935385048389435,
+    "nonviolence_prob": 0.6064614653587341
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\52658.jpg",
+    "similarity": 0.18197236955165863,
+    "violence_prob": 0.9630335569381714,
+    "nonviolence_prob": 0.0369664691388607
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\43721.jpg",
+    "similarity": 0.1744913011789322,
+    "violence_prob": 0.07043042778968811,
+    "nonviolence_prob": 0.9295696020126343
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\3623.jpg",
+    "similarity": 0.1743428111076355,
+    "violence_prob": 0.07904846966266632,
+    "nonviolence_prob": 0.9209515452384949
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\30052.jpg",
+    "similarity": 0.1690162718296051,
+    "violence_prob": 0.5019535422325134,
+    "nonviolence_prob": 0.4980464577674866
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\42053.jpg",
+    "similarity": 0.16606485843658447,
+    "violence_prob": 0.21850448846817017,
+    "nonviolence_prob": 0.7814955115318298
+  },
+  {
+    "path": "D:/code/projects/NCKH/video_frame/video_test_training_CLIP/segment_Video_1\\22398.jpg",
+    "similarity": 0.16376115381717682,
+    "violence_prob": 0.3093656003475189,
+    "nonviolence_prob": 0.6906343698501587
+  }
+]
