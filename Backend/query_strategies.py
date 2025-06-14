@@ -31,8 +31,27 @@ def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence
                 # Chuyển đổi numpy.float32 sang float thông thường
                 if isinstance(confidence, np.float32):
                     confidence = float(confidence)
-                event = format_event_for_frontend(frame_data)
+                
+                # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
+                frame_data_copy = frame_data.copy()
+                
+                # Đặt giá trị clip_similarity vào frame_data trước khi gọi format_event_for_frontend
+                frame_data_copy['clip_similarity'] = confidence
+                
+                # Đảm bảo các trường confidence khác có giá trị mặc định
+                if 'text_confidence' not in frame_data_copy:
+                    frame_data_copy['text_confidence'] = 0.0
+                if 'object_confidence' not in frame_data_copy:
+                    frame_data_copy['object_confidence'] = 0.0
+                
+                # Format event cho frontend
+                event = format_event_for_frontend(frame_data_copy)
+                
+                # Đảm bảo confidence và clip_similarity được đặt đúng
                 event["confidence"] = confidence
+                event["clip_similarity"] = confidence
+                event["detection_type"] = "clip"
+                
                 results.append(event)
         
         # Sắp xếp theo confidence (giảm dần)
@@ -68,8 +87,26 @@ def query_by_text_with_adaptive_threshold(query, adaptive_threshold, top_k, sear
                     confidence = float(confidence)
                 # Áp dụng adaptive threshold
                 if confidence >= adaptive_threshold:
-                    event = format_event_for_frontend(frame_data)
+                    # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
+                    frame_data_copy = frame_data.copy()
+                    
+                    # Đặt giá trị clip_similarity vào frame_data trước khi gọi format_event_for_frontend
+                    frame_data_copy['clip_similarity'] = confidence
+                    
+                    # Đảm bảo các trường confidence khác có giá trị mặc định
+                    if 'text_confidence' not in frame_data_copy:
+                        frame_data_copy['text_confidence'] = 0.0
+                    if 'object_confidence' not in frame_data_copy:
+                        frame_data_copy['object_confidence'] = 0.0
+                    
+                    # Format event cho frontend
+                    event = format_event_for_frontend(frame_data_copy)
+                    
+                    # Đảm bảo confidence và clip_similarity được đặt đúng
                     event["confidence"] = confidence
+                    event["clip_similarity"] = confidence
+                    event["detection_type"] = "clip"
+                    
                     results.append(event)
         
         # Sắp xếp theo confidence (giảm dần)
@@ -109,15 +146,31 @@ def query_by_keyword(query, adaptive_threshold, top_k, search_frames_by_keyword,
                             best_match = detection
                 
                 if best_match and max_conf >= adaptive_threshold:
-                    # Đảm bảo frame_data có chứa text_confidence
-                    frame_data['text_confidence'] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
+                    # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
+                    frame_data_copy = frame_data.copy()
                     
-                    # Thêm các thông tin confidence khác nếu có
-                    if 'clip_similarity' not in frame_data:
-                        frame_data['clip_similarity'] = 0.0
-                        
-                    event = format_event_for_frontend(frame_data)
+                    # Thay thế text_detections bằng chỉ detection chứa keyword
+                    # Điều này đảm bảo format_event_for_frontend sẽ chọn detection này
+                    frame_data_copy['text_detections'] = {
+                        'detections': [best_match]
+                    }
+                    
+                    # Đặt các giá trị confidence
+                    frame_data_copy['text_confidence'] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
+                    frame_data_copy['clip_similarity'] = 0.0
+                    frame_data_copy['object_confidence'] = 0.0
+                    
+                    # Đặt trường description để hiển thị đúng label đã tìm thấy
+                    frame_data_copy['description'] = best_match.get('label', 'Event detected')
+                    
+                    # Format event cho frontend
+                    event = format_event_for_frontend(frame_data_copy)
+                    
+                    # Đảm bảo confidence chính là confidence của text detection
                     event["confidence"] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
+                    event["text_confidence"] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
+                    event["detection_type"] = "text"
+                    
                     results.append(event)
         
         # Sắp xếp theo confidence (giảm dần)

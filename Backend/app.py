@@ -212,12 +212,13 @@ def extract_query_confidence(frame_path, query):
         text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
         
         # Kiểm tra tồn tại file embeddings
-        if not os.path.exists(EMBEDDINGS_FILE):
-            print(f"Warning: Embeddings file not found: {EMBEDDINGS_FILE}")
-            return 0.5  # Trả về giá trị mặc định
+        embeddings_path = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding/image_embeddings.npy"
+        if not os.path.exists(embeddings_path):
+            print(f"Warning: Embeddings file not found: {embeddings_path}")
+            return 0.0  # Trả về 0 nếu không tìm thấy file
             
         # Tải embeddings
-        embeddings = np.load(EMBEDDINGS_FILE)
+        embeddings = np.load(embeddings_path)
         embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
         
         # Tải danh sách files
@@ -228,12 +229,12 @@ def extract_query_confidence(frame_path, query):
             index = all_files.index(frame_path)
         except ValueError:
             print(f"Warning: Frame {frame_path} not found in frames list")
-            return 0.5  # Trả về giá trị mặc định nếu không tìm thấy frame
+            return 0.0  # Trả về 0 nếu không tìm thấy frame
             
         # Kiểm tra index có hợp lệ không
         if index >= embeddings.shape[0]:
             print(f"Warning: Index {index} out of bounds for embeddings shape {embeddings.shape}")
-            return 0.5  # Trả về giá trị mặc định
+            return 0.0  # Trả về 0 nếu index không hợp lệ
         
         # Tính toán similarity
         similarity = np.dot(embeddings[index], text_features.T).flatten()[0]
@@ -245,7 +246,7 @@ def extract_query_confidence(frame_path, query):
         return similarity
     except Exception as e:
         print(f"Error in extract_query_confidence: {e}")
-        return 0.5  # Trả về giá trị mặc định nếu có lỗi
+        return 0.0  # Trả về 0 nếu có lỗi
 
 def filter_frame_by_keyword_and_confidence(frame, keyword, keyword_frames, min_confidence):
     """Lọc frame dựa trên từ khóa và độ tin cậy."""
@@ -638,6 +639,7 @@ def api_search():
         print(f"Search request: type={search_type}, method={search_method}, query='{query}', object='{object_keyword}'")
         print(f"Thresholds: adaptive={adaptive_threshold}, text={text_confidence}, object={object_confidence}")
         print(f"Enabled filters: text={enable_text_keyword}, object={enable_object_keyword}, clip={enable_clip_similarity}")
+        print(f"Keyword: '{keyword}'")
         
         results = []
         
@@ -678,7 +680,7 @@ def api_search():
                 
                 results = query_by_text_and_keyword(
                     query, adaptive_threshold, top_k,
-                    search_top_frames, extract_query_confidence,
+                    search_top_frames, extract_query_confidence, 
                     search_frames_by_keyword, format_event_for_frontend,
                     keyword=actual_keyword, text_confidence=text_confidence
                 )

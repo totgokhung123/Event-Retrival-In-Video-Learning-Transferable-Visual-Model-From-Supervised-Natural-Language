@@ -40,24 +40,11 @@ export const EventsSection = () => {
 
   // Get confidence values from event data for different detection types
   const getEventConfidences = (event: ExtendedEventData) => {
-    // Log đầy đủ dữ liệu event để debug
-    console.log("Event data:", event);
-    
     // Lấy trực tiếp các giá trị confidence từ dữ liệu JSON
     const mainConfidence = event.confidence || 0;
     const textConfidence = event.text_confidence || 0;
     const objectConfidence = event.object_confidence || 0;
     const clipConfidence = event.clip_similarity || 0;
-    
-    // Log chi tiết các giá trị confidence để debug
-    console.log("Event ID:", event.id);
-    console.log("Event title:", event.title);
-    console.log("Confidence values:", {
-      main: mainConfidence,
-      text: textConfidence, 
-      object: objectConfidence,
-      clip: clipConfidence
-    });
     
     return {
       text: textConfidence,
@@ -67,16 +54,18 @@ export const EventsSection = () => {
     };
   };
 
-  // Determine which confidence values to display based on available data
+  // Determine which confidence values to display based on available data and search filters
   const getDisplayConfidences = (event: ExtendedEventData) => {
     const confidenceValues = getEventConfidences(event);
     const confidences = [];
     
-    // Kiểm tra xem CLIP Similarity Filter được kích hoạt không
-    const clipFilterEnabled = activeSearchFilters.enableClipSimilarity;
+    // Xác định phương thức tìm kiếm đang sử dụng
+    const usingTextKeyword = activeSearchFilters.enableTextKeyword;
+    const usingObjectKeyword = activeSearchFilters.enableObjectKeyword;
+    const usingClipSimilarity = activeSearchFilters.enableClipSimilarity;
     
-    // Text Detection
-    if ((confidenceValues.text > 0 || activeSearchFilters.enableTextKeyword) && displayFilters.showTextDetection) {
+    // Text Detection - chỉ hiển thị khi đang sử dụng Text Keyword
+    if (usingTextKeyword && displayFilters.showTextDetection) {
       confidences.push({
         value: confidenceValues.text,
         label: 'Text Detection',
@@ -85,9 +74,8 @@ export const EventsSection = () => {
       });
     }
     
-    // Object Detection
-    if ((confidenceValues.object > 0 || activeSearchFilters.enableObjectKeyword) && 
-        displayFilters.showObjectDetection && displayFilters.showLabels) {
+    // Object Detection - chỉ hiển thị khi đang sử dụng Object Keyword
+    if (usingObjectKeyword && displayFilters.showObjectDetection && displayFilters.showLabels) {
       confidences.push({
         value: confidenceValues.object,
         label: 'Object Detection',
@@ -96,14 +84,19 @@ export const EventsSection = () => {
       });
     }
     
-    // CLIP Similarity - luôn hiển thị khi filter được kích hoạt, ngay cả khi giá trị bằng 0
-    if (displayFilters.showClipSimilarity && (confidenceValues.clip >= 0 || clipFilterEnabled)) {
-      // Đảm bảo giá trị không bị null hoặc undefined
-      const clipValue = confidenceValues.clip || 0;
+    // CLIP Similarity - hiển thị khi:
+    // 1. Người dùng bật filter CLIP Similarity, HOẶC
+    // 2. Khi detection_type là "clip", HOẶC
+    // 3. Khi không sử dụng keyword hoặc object keyword nhưng có clip_similarity > 0
+    const hasClipSimilarity = confidenceValues.clip > 0;
+    const isClipDetection = event.detection_type === "clip";
+    
+    if ((usingClipSimilarity || isClipDetection || (hasClipSimilarity && !usingTextKeyword && !usingObjectKeyword)) 
+        && displayFilters.showClipSimilarity) {
       confidences.push({
-        value: clipValue,
+        value: confidenceValues.clip,
         label: 'CLIP Similarity',
-        color: getConfidenceColor(clipValue),
+        color: getConfidenceColor(confidenceValues.clip),
         bgColor: 'from-orange-500 to-red-500'
       });
     }
