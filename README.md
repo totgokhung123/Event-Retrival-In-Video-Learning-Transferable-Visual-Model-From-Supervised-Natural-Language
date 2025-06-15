@@ -1,4 +1,4 @@
-# LLaVA Caption Generator for Violence/NonViolence Dataset
+# Setup for model finetune
 
 Dự án này sử dụng mô hình LLaVA (Large Language and Vision Assistant) để tạo caption chi tiết cho bộ dataset của bạn, phân loại theo 2 nhóm "Violence" và "NonViolence".
 
