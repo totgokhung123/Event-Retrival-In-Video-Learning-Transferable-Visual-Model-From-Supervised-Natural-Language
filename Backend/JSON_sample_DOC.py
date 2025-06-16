@@ -6,7 +6,8 @@ import uuid  # Để tạo id độc nhất
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from functools import partial
-from ultralytics import YOLO  
+from ultralytics import YOLO
+from pathlib import Path  
 
 def get_image_metadata(image_path):
     """Lấy metadata cơ bản của ảnh."""
@@ -86,11 +87,33 @@ def process_image(file_path, reader,path_video, model):
         return None
 
 
-def process_images_in_folder(folder_path, output_json_path,path_video, max_workers=4):
+def process_images_in_folder(folder_path, output_json_path, path_video, max_workers=4):
+    """
+    Process all images in a folder and save metadata to a video-specific JSON file.
+    
+    Args:
+        folder_path: Path to folder containing extracted frames
+        output_json_path: Path to the output JSON file (will be modified to use video-specific path)
+        path_video: Path to the source video file
+        max_workers: Number of parallel workers
+    
+    Returns:
+        The path to the saved JSON metadata file
+    """
     reader = easyocr.Reader(['vi'], gpu=True)
     model = YOLO('yolov8x.pt') 
-    if os.path.exists(output_json_path):
-        with open(output_json_path, 'r', encoding='utf-8') as json_file:
+    
+    # Create metadata directory if it doesn't exist
+    metadata_dir = "E:/Đồ án tôt nghiệp/source_code/Backend/metadata"
+    os.makedirs(metadata_dir, exist_ok=True)
+    
+    # Create video-specific metadata file
+    video_name = Path(path_video).stem
+    video_metadata_path = os.path.join(metadata_dir, f"{video_name}_metadata.json")
+    
+    # Initialize with empty data or load existing if exists
+    if os.path.exists(video_metadata_path):
+        with open(video_metadata_path, 'r', encoding='utf-8') as json_file:
             existing_data = json.load(json_file)
     else:
         existing_data = []
@@ -101,21 +124,22 @@ def process_images_in_folder(folder_path, output_json_path,path_video, max_worke
         if file_name.lower().endswith(('.png', '.jpg', '.jpeg'))
     ]
     # Dùng partial để đóng gói các tham số bổ sung
-    process_with_params = partial(process_image, reader=reader, path_video=path_video,model=model)
+    process_with_params = partial(process_image, reader=reader, path_video=path_video, model=model)
 
     # Dùng ThreadPoolExecutor để xử lý đa luồng
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         results = list(tqdm(executor.map(process_with_params, files), 
                             total=len(files), desc="Processing Frames"))
-    # with ThreadPoolExecutor(max_workers=max_workers) as executor:
-
-    #     results = list(tqdm(executor.map(lambda f: process_image(f, reader), files, path_video), 
-    #                         total=len(files), desc="Processing Frames"))
+    
     new_data = [res for res in results if res]
     existing_data.extend(new_data)
-    with open(output_json_path, 'w', encoding='utf-8') as json_file:
+    
+    with open(video_metadata_path, 'w', encoding='utf-8') as json_file:
         json.dump(existing_data, json_file, ensure_ascii=False, indent=4)
-    print(f"Updated JSON has been saved to {output_json_path}")
+    
+    print(f"Video metadata saved to {video_metadata_path}")
+    return video_metadata_path
+
 # def escape_path(path):
 #     """Hàm escape đường dẫn video"""
 #     return path.replace("\\", "\\\\")

@@ -34,22 +34,116 @@ from query_strategies import (
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
-FRAMES_JSON = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\output_samples.json" 
-EMBEDDINGS_FILE = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding/image_embeddings.npy"
-text_processor = VietnameseTextProcessor()
+# Base directories
+BASE_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\processed_frames"
+METADATA_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata"
+EMBEDDING_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding"
 
-def load_frames_from_json(json_path):
-    """Load danh sách tên file từ file JSON."""
+# Create necessary directories if they don't exist
+os.makedirs(METADATA_DIR, exist_ok=True)
+os.makedirs(EMBEDDING_DIR, exist_ok=True)
+
+# Dictionary to track metadata and embedding files for each video
+video_data_mapping = {}
+
+def load_video_data_mapping():
+    """Load mapping between videos and their metadata/embedding files."""
+    mapping_file = os.path.join(METADATA_DIR, "video_mapping.json")
+    if os.path.exists(mapping_file):
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_video_data_mapping():
+    """Save the current video data mapping to a file."""
+    mapping_file = os.path.join(METADATA_DIR, "video_mapping.json")
+    with open(mapping_file, 'w', encoding='utf-8') as f:
+        json.dump(video_data_mapping, f, ensure_ascii=False, indent=4)
+
+# Load existing mapping at startup
+video_data_mapping = load_video_data_mapping()
+
+def get_default_metadata_path():
+    """Get the default metadata path for backward compatibility."""
+    # Check if there's any video in the mapping
+    if video_data_mapping:
+        # Return the metadata file of the first video
+        first_video = list(video_data_mapping.keys())[0]
+        return video_data_mapping[first_video]["metadata_file"]
+    # Fallback to a default path
+    return os.path.join(METADATA_DIR, "output_samples.json")
+
+def get_default_embeddings_path():
+    """Get the default embeddings path for backward compatibility."""
+    # Check if there's any video in the mapping
+    if video_data_mapping:
+        # Return the embeddings file of the first video
+        first_video = list(video_data_mapping.keys())[0]
+        return video_data_mapping[first_video]["embeddings_file"]
+    # Fallback to a default path
+    return os.path.join(EMBEDDING_DIR, "image_embeddings.npy")
+
+def get_video_metadata_path(video_name=None):
+    """
+    Get the metadata file path for a specific video or the default one.
+    
+    Args:
+        video_name: Name of the video
+    
+    Returns:
+        Path to the metadata file
+    """
+    if video_name and video_name in video_data_mapping:
+        return video_data_mapping[video_name]["metadata_file"]
+    return get_default_metadata_path()
+
+def get_video_embeddings_path(video_name=None):
+    """
+    Get the embeddings file path for a specific video or the default one.
+    
+    Args:
+        video_name: Name of the video
+    
+    Returns:
+        Path to the embeddings file
+    """
+    if video_name and video_name in video_data_mapping:
+        return video_data_mapping[video_name]["embeddings_file"]
+    return get_default_embeddings_path()
+
+def load_frames_from_json(json_path, video_name=None):
+    """
+    Load danh sách tên file từ file JSON.
+    
+    Args:
+        json_path: Path to JSON file or video name
+        video_name: If provided, will load frames for this specific video
+    """
+    # If video_name is provided, use the specific metadata file for that video
+    if video_name:
+        json_path = get_video_metadata_path(video_name)
+    
     with open(json_path, 'r', encoding='utf-8') as file:
         samples = json.load(file)
     return [os.path.basename(sample["filepath"]) for sample in samples if "filepath" in sample]
 
-def load_frames_mapping_from_json(json_path):
+def load_frames_mapping_from_json(json_path, video_name=None):
+    """
+    Load mapping from frame file names to full paths.
+    
+    Args:
+        json_path: Path to JSON file or video name
+        video_name: If provided, will load frames for this specific video
+    """
+    # If video_name is provided, use the specific metadata file for that video
+    if video_name:
+        json_path = get_video_metadata_path(video_name)
+    
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
         return {Path(sample["filepath"]).name: sample["filepath"] for sample in data}
 
-FRAMES_MAPPING = load_frames_mapping_from_json(FRAMES_JSON)
+FRAMES_MAPPING = load_frames_mapping_from_json(get_default_metadata_path())
 app = Flask(__name__)
 # Thêm CORS support
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -178,10 +272,21 @@ def format_event_for_frontend(frame_data):
     }
 
 # Các hàm core được sử dụng bởi cả template cũ và API mới
-def search_frames_by_keyword(keyword, top_k):
-    """Tìm kiếm frame theo từ khóa text."""
+def search_frames_by_keyword(keyword, top_k, video_name=None):
+    """
+    Tìm kiếm frame theo từ khóa text.
+    
+    Args:
+        keyword: Từ khóa cần tìm
+        top_k: Số kết quả trả về tối đa
+        video_name: Nếu có, chỉ tìm kiếm trong video này
+    """
     matching_frames = []
-    with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+    
+    # Determine which JSON file to use
+    json_path = get_video_metadata_path(video_name)
+        
+    with open(json_path, "r", encoding="utf-8") as f:
         frames_data = json.load(f)
         
     keyword_without_accents = unidecode(keyword.lower())
@@ -202,8 +307,15 @@ def search_frames_by_keyword(keyword, top_k):
     matching_frames.sort(key=lambda x: x["confidence"], reverse=True)
     return [frame["frameid"] for frame in matching_frames[:top_k]]
 
-def extract_query_confidence(frame_path, query):
-    """Trích xuất độ tương đồng giữa một khung hình và query text."""
+def extract_query_confidence(frame_path, query, video_name=None):
+    """
+    Trích xuất độ tương đồng giữa một khung hình và query text.
+    
+    Args:
+        frame_path: Path to frame file
+        query: Query text
+        video_name: If provided, will use the specific embeddings for this video
+    """
     try:
         # Tokenize và encode query text
         text_input = clip.tokenize([query]).to(device)
@@ -211,69 +323,102 @@ def extract_query_confidence(frame_path, query):
             text_features = model.encode_text(text_input).cpu().numpy()
         text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
         
-        # Kiểm tra tồn tại file embeddings
-        embeddings_path = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding/image_embeddings.npy"
+        # Determine which embeddings file to use
+        embeddings_path = get_video_embeddings_path(video_name)
+        
+        # Check if embeddings file exists
         if not os.path.exists(embeddings_path):
             print(f"Warning: Embeddings file not found: {embeddings_path}")
-            return 0.0  # Trả về 0 nếu không tìm thấy file
+            return 0.0
             
-        # Tải embeddings
+        # Load embeddings
         embeddings = np.load(embeddings_path)
         embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
         
-        # Tải danh sách files
-        all_files = load_frames_from_json(FRAMES_JSON)
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
+            
+        # Load frame list
+        all_files = load_frames_from_json(json_path, video_name)
         
-        # Tìm index của frame trong danh sách
+        # Find frame index
         try:
             index = all_files.index(frame_path)
         except ValueError:
             print(f"Warning: Frame {frame_path} not found in frames list")
-            return 0.0  # Trả về 0 nếu không tìm thấy frame
+            return 0.0
             
-        # Kiểm tra index có hợp lệ không
+        # Check if index is valid
         if index >= embeddings.shape[0]:
             print(f"Warning: Index {index} out of bounds for embeddings shape {embeddings.shape}")
-            return 0.0  # Trả về 0 nếu index không hợp lệ
+            return 0.0
         
-        # Tính toán similarity
+        # Calculate similarity
         similarity = np.dot(embeddings[index], text_features.T).flatten()[0]
         
-        # Chuyển đổi numpy.float32 sang float thông thường
+        # Convert from numpy float to regular float
         if isinstance(similarity, np.float32) or isinstance(similarity, np.float64):
             similarity = float(similarity)
             
         return similarity
     except Exception as e:
         print(f"Error in extract_query_confidence: {e}")
-        return 0.0  # Trả về 0 nếu có lỗi
+        return 0.0
 
-def filter_frame_by_keyword_and_confidence(frame, keyword, keyword_frames, min_confidence):
-    """Lọc frame dựa trên từ khóa và độ tin cậy."""
+def filter_frame_by_keyword_and_confidence(frame, keyword, keyword_frames, min_confidence, video_name=None):
+    """
+    Lọc frame dựa trên từ khóa và độ tin cậy.
+    
+    Args:
+        frame: Frame ID to check
+        keyword: Keyword to search for
+        keyword_frames: List of frames containing the keyword
+        min_confidence: Minimum confidence threshold
+        video_name: If provided, search only within this video's frames
+    """
     if frame not in keyword_frames:
         return False
+        
     keyword_without_accents = unidecode(keyword.lower())
-    with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+    
+    # Determine which JSON file to use
+    json_path = get_video_metadata_path(video_name)
+    
+    with open(json_path, "r", encoding="utf-8") as f:
         frames_data = json.load(f)
     
     frame_data = next((f for f in frames_data if f.get('frameid') == frame), {})
     detections = frame_data.get("text_detections", {}).get("detections", [])
+    
     for detection in detections:
         detection_label = detection.get("label", "").lower()
         # Kiểm tra nếu label chứa keyword và có confidence >= min_confidence
         if keyword_without_accents in unidecode(detection_label) and detection.get("confidence", 0) >= min_confidence:
             return True
+    
     return False
 
-def search_top_frames(query, top_k):
-    """Tìm kiếm top frames dựa trên query text sử dụng CLIP."""
+def search_top_frames(query, top_k, video_name=None):
+    """
+    Tìm kiếm top frames dựa trên query text sử dụng CLIP.
+    
+    Args:
+        query: Query text
+        top_k: Number of top results to return
+        video_name: If provided, search only within this video's frames
+    """
     text_input = clip.tokenize([query]).to(device)
     with torch.no_grad():
         text_features = model.encode_text(text_input).cpu().numpy()
 
     text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
-
-    embeddings = np.load(EMBEDDINGS_FILE)
+    
+    # Determine which embeddings and frames to use based on video_name
+    embeddings_file = get_video_embeddings_path(video_name)
+    json_path = get_video_metadata_path(video_name)
+    
+    # Load embeddings
+    embeddings = np.load(embeddings_file)
     embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
 
     # FAISS expects float32
@@ -285,21 +430,41 @@ def search_top_frames(query, top_k):
     index.add(embeddings)
     D, I = index.search(text_features, top_k)  # text_features shape: (1, dim)
 
-    all_files = load_frames_from_json(FRAMES_JSON)
+    all_files = load_frames_from_json(json_path, video_name)
     top_indices = I[0]
     return [all_files[i] for i in top_indices]
 
-def search_top_frames_by_image(image_features, top_k):
-    """Tìm kiếm top frames dựa trên image features sử dụng CLIP."""
-    embeddings = np.load(EMBEDDINGS_FILE)
+def search_top_frames_by_image(image_features, top_k, video_name=None):
+    """
+    Tìm kiếm top frames dựa trên image features sử dụng CLIP.
+    
+    Args:
+        image_features: Image feature vector
+        top_k: Number of top results to return
+        video_name: If provided, search only within this video's frames
+    """
+    # Determine which embeddings and frames to use based on video_name
+    embeddings_file = get_video_embeddings_path(video_name)
+    json_path = get_video_metadata_path(video_name)
+        
+    # Load embeddings
+    embeddings = np.load(embeddings_file)
     similarities = np.dot(embeddings, image_features.T).flatten()
     top_indices = np.argsort(similarities)[-top_k:][::-1]
-    all_files = load_frames_from_json(FRAMES_JSON)
+    all_files = load_frames_from_json(json_path, video_name)
     return [all_files[i] for i in top_indices]
 
 # Thêm 7 hàm xử lý truy vấn mới
-def search_by_image(image_url, adaptive_threshold, top_k):
-    """Tìm kiếm bằng hình ảnh."""
+def search_by_image(image_url, adaptive_threshold, top_k, video_name=None):
+    """
+    Tìm kiếm bằng hình ảnh.
+    
+    Args:
+        image_url: URL của hình ảnh để tìm kiếm
+        adaptive_threshold: Ngưỡng độ tin cậy
+        top_k: Số kết quả trả về tối đa
+        video_name: Nếu có, chỉ tìm kiếm trong video này
+    """
     try:
         if re.match(r"^data:image\/[a-zA-Z]+;base64,", image_url):
             base64_str = image_url.split(",", 1)[1]
@@ -316,10 +481,13 @@ def search_by_image(image_url, adaptive_threshold, top_k):
         image_features = image_features / np.linalg.norm(image_features, axis=-1, keepdims=True)
 
         # Tìm kiếm các frame phù hợp
-        top_frames = search_top_frames_by_image(image_features, top_k * 5)
+        top_frames = search_top_frames_by_image(image_features, top_k * 5, video_name)
         
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
+            
         # Đọc dữ liệu từ file JSON
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
         # Lọc frame data
@@ -341,17 +509,28 @@ def search_by_image(image_url, adaptive_threshold, top_k):
         print(f"Error processing image search: {e}")
         return []
 
-def search_semantic_with_clip(query, adaptive_threshold, top_k):
-    """Tìm kiếm ngữ nghĩa với CLIP."""
+def search_semantic_with_clip(query, adaptive_threshold, top_k, video_name=None):
+    """
+    Tìm kiếm ngữ nghĩa với CLIP.
+    
+    Args:
+        query: Query text
+        adaptive_threshold: Ngưỡng độ tin cậy
+        top_k: Số kết quả trả về tối đa
+        video_name: Nếu có, chỉ tìm kiếm trong video này
+    """
     try:
         processor = VietnameseTextProcessor()
         processed_text = processor.preprocess_and_translate(query)
         print("Câu truy vấn đã xử lý:", processed_text)
         
-        query_frames = search_top_frames(processed_text, top_k * 5)
+        query_frames = search_top_frames(processed_text, top_k * 5, video_name)
+        
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
         
         # Đọc dữ liệu từ file JSON
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
         # Lọc frame data
@@ -360,7 +539,7 @@ def search_semantic_with_clip(query, adaptive_threshold, top_k):
             frame_idx = int(Path(frame_name).stem)
             frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
             if frame_data:
-                confidence = extract_query_confidence(frame_name, processed_text)
+                confidence = extract_query_confidence(frame_name, processed_text, video_name)
                 # Chuyển đổi numpy.float32 sang float thông thường
                 if isinstance(confidence, np.float32):
                     confidence = float(confidence)
@@ -374,14 +553,25 @@ def search_semantic_with_clip(query, adaptive_threshold, top_k):
         print(f"Error in semantic search: {e}")
         return []
 
-def search_by_keyword(query, adaptive_threshold, top_k):
-    """Tìm kiếm theo từ khóa."""
+def search_by_keyword(query, adaptive_threshold, top_k, video_name=None):
+    """
+    Tìm kiếm theo từ khóa.
+    
+    Args:
+        query: Từ khóa cần tìm
+        adaptive_threshold: Ngưỡng độ tin cậy
+        top_k: Số kết quả trả về tối đa
+        video_name: Nếu có, chỉ tìm kiếm trong video này
+    """
     try:
-        keyword_frame_ids = search_frames_by_keyword(query, top_k * 3)
+        keyword_frame_ids = search_frames_by_keyword(query, top_k * 3, video_name)
         keyword_results = []
         
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
+        
         # Đọc dữ liệu từ file JSON
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
         for frame_id in keyword_frame_ids:
@@ -411,11 +601,22 @@ def search_by_keyword(query, adaptive_threshold, top_k):
         print(f"Error in keyword search: {e}")
         return []
 
-def search_by_object(query, adaptive_threshold, top_k):
-    """Tìm kiếm theo object."""
+def search_by_object(query, adaptive_threshold, top_k, video_name=None):
+    """
+    Tìm kiếm theo object.
+    
+    Args:
+        query: Từ khóa object cần tìm
+        adaptive_threshold: Ngưỡng độ tin cậy
+        top_k: Số kết quả trả về tối đa
+        video_name: Nếu có, chỉ tìm kiếm trong video này
+    """
     try:
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
+        
         # Đọc dữ liệu từ file JSON
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             
         object_results = []
@@ -501,15 +702,25 @@ def search_by_object(query, adaptive_threshold, top_k):
         print(f"Error in object search: {e}")
         return []
 
-def search_fallback(query, top_k):
-    """Tìm kiếm dự phòng khi không có kết quả."""
+def search_fallback(query, top_k, video_name=None):
+    """
+    Tìm kiếm dự phòng khi không có kết quả.
+    
+    Args:
+        query: Query text
+        top_k: Number of top results to return
+        video_name: If provided, search only within this video's frames
+    """
     try:
         processor = VietnameseTextProcessor()
         processed_text = processor.preprocess_and_translate(query)
-        query_frames = search_top_frames(processed_text, top_k)
+        query_frames = search_top_frames(processed_text, top_k, video_name)
+        
+        # Determine which JSON file to use
+        json_path = get_video_metadata_path(video_name)
         
         # Đọc dữ liệu từ file JSON
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             
         fallback_results = []
@@ -544,29 +755,78 @@ def api_get_videos():
     """API lấy danh sách tất cả video."""
     videos = []
     try:
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
+        # Use the video_data_mapping instead of scanning the old JSON file
         video_dict = {}
-        for frame_data in data:
-            video_path = frame_data.get('video')
-            if video_path and video_path not in video_dict:
-                video_name = os.path.basename(os.path.dirname(video_path))
-                video_filename = os.path.basename(video_path)
+        videos_to_remove = []
+        
+        for idx, (video_name, video_info) in enumerate(list(video_data_mapping.items()), 1):
+            video_path = video_info.get('video_path')
+            if not video_path or not os.path.exists(video_path):
+                # Mark this video for removal from the mapping
+                videos_to_remove.append(video_name)
+                print(f"Video not found, will be removed from mapping: {video_path}")
+                continue
                 
-                # Tạo ID duy nhất cho video
-                video_id = f"video-{len(video_dict)+1}"
-                
-                video_dict[video_path] = {
-                    "id": video_id,
-                    "title": video_name or video_filename,
-                    "thumbnail": frame_data.get('filepath'),
-                    "duration": get_video_duration(video_path),
-                    "uploadDate": time.strftime('%Y-%m-%d', time.gmtime(os.path.getctime(video_path))),
-                    "size": f"{os.path.getsize(video_path) // (1024 * 1024)} MB",
-                    "resolution": get_video_resolution(video_path),
-                    "path": video_path
-                }
+            # Create a unique ID for the video
+            video_id = f"video-{idx}"
+            
+            # Get the first frame from the frames directory as thumbnail
+            frames_dir = video_info.get('frames_dir')
+            thumbnail = None
+            if frames_dir and os.path.exists(frames_dir):
+                frame_files = os.listdir(frames_dir)
+                if frame_files:
+                    # Sort frames to get the first one
+                    frame_files.sort()
+                    thumbnail = os.path.join(frames_dir, frame_files[0])
+            
+            video_dict[video_path] = {
+                "id": video_id,
+                "title": video_name,
+                "thumbnail": thumbnail,
+                "duration": get_video_duration(video_path),
+                "uploadDate": time.strftime('%Y-%m-%d', time.gmtime(os.path.getctime(video_path))),
+                "size": f"{os.path.getsize(video_path) // (1024 * 1024)} MB",
+                "resolution": get_video_resolution(video_path),
+                "path": video_path
+            }
+        
+        # Remove videos that no longer exist from the mapping
+        if videos_to_remove:
+            for video_name in videos_to_remove:
+                del video_data_mapping[video_name]
+            # Save the updated mapping
+            save_video_data_mapping()
+            print(f"Removed {len(videos_to_remove)} non-existent videos from mapping")
+        
+        # If no videos found in mapping, fall back to the old method
+        if not video_dict:
+            with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            for frame_data in data:
+                video_path = frame_data.get('video')
+                if video_path and video_path not in video_dict:
+                    # Skip if video doesn't exist
+                    if not os.path.exists(video_path):
+                        continue
+                        
+                    video_name = os.path.basename(os.path.dirname(video_path))
+                    video_filename = os.path.basename(video_path)
+                    
+                    # Create a unique ID for the video
+                    video_id = f"video-{len(video_dict)+1}"
+                    
+                    video_dict[video_path] = {
+                        "id": video_id,
+                        "title": video_name or video_filename,
+                        "thumbnail": frame_data.get('filepath'),
+                        "duration": get_video_duration(video_path),
+                        "uploadDate": time.strftime('%Y-%m-%d', time.gmtime(os.path.getctime(video_path))),
+                        "size": f"{os.path.getsize(video_path) // (1024 * 1024)} MB",
+                        "resolution": get_video_resolution(video_path),
+                        "path": video_path
+                    }
         
         videos = list(video_dict.values())
         return jsonify(videos)
@@ -576,29 +836,69 @@ def api_get_videos():
 
 @app.route('/api/video/<video_id>/events', methods=['GET'])
 def api_get_video_events(video_id):
-    """API lấy sự kiện của một video cụ thể."""
+    """
+    API lấy sự kiện của một video cụ thể.
+    
+    Args:
+        video_id: ID của video (ví dụ: video-1)
+    """
     try:
-        # Trích xuất video_path từ video_id
+        # Extract video name from video_id
+        video_name = None
         video_path = None
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
-            data = json.load(f)
         
-        # Tìm tất cả frame thuộc video này
-        events = []
-        for frame_data in data:
+        # If video_id is in format "video-X" where X is a number
+        if video_id.startswith('video-'):
+            video_num = int(video_id.split('-')[1])
+            
+            # Get list of videos from mapping
+            all_videos = list(video_data_mapping.keys())
+            
+            if all_videos and len(all_videos) >= video_num:
+                # Get video name
+                video_name = all_videos[video_num-1]
+                video_path = video_data_mapping[video_name]["video_path"]
+                
+        # If we couldn't find the video, try the legacy approach
+        if not video_path:
+            with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            # Find all videos
+            all_video_paths = sorted(list(set([d.get('video') for d in data if d.get('video')])))
+            
             if video_id.startswith('video-'):
-                # ID dạng video-1, video-2...
                 video_num = int(video_id.split('-')[1])
-                # Lấy danh sách các video paths
-                all_video_paths = sorted(list(set([d.get('video') for d in data if d.get('video')])))
                 if len(all_video_paths) >= video_num:
                     video_path = all_video_paths[video_num-1]
-            
-            if frame_data.get('video') == video_path:
-                events.append(format_event_for_frontend(frame_data))
+                    video_name = Path(video_path).stem
         
-        # Chỉ lấy những events nổi bật
-        # Có thể cải thiện thuật toán chọn events ở đây
+        # If we still couldn't find the video, return an error
+        if not video_path:
+            return jsonify({"error": f"Video with ID {video_id} not found"}), 404
+            
+        # Get events for this video
+        events = []
+        
+        # Use video-specific metadata if available
+        if video_name and video_name in video_data_mapping:
+            metadata_file = video_data_mapping[video_name]["metadata_file"]
+            with open(metadata_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+            # All frames in this file belong to the video
+            for frame_data in data:
+                events.append(format_event_for_frontend(frame_data))
+        else:
+            # Fallback to scanning the combined JSON file
+            with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+            for frame_data in data:
+                if frame_data.get('video') == video_path:
+                    events.append(format_event_for_frontend(frame_data))
+        
+        # Filter to show a reasonable number of events
         if len(events) > 20:
             step = len(events) // 20
             filtered_events = [events[i] for i in range(0, len(events), step)][:20]
@@ -614,6 +914,7 @@ def api_get_video_events(video_id):
 def api_search():
     """API tìm kiếm sự kiện bằng text hoặc hình ảnh."""
     try:
+        start_time = time.time()
         data = request.json
         search_type = data.get("search_type", "text")
         query = data.get("query", "")
@@ -630,6 +931,16 @@ def api_search():
         keyword = data.get("keyword", "")
         object_keyword = data.get("object", "")
         
+        # Lấy video_name nếu có để tìm kiếm trong phạm vi video cụ thể
+        video_id = data.get("videoId")
+        video_name = None
+        
+        if video_id and video_id.startswith('video-'):
+            video_num = int(video_id.split('-')[1])
+            all_videos = list(video_data_mapping.keys())
+            if all_videos and len(all_videos) >= video_num:
+                video_name = all_videos[video_num-1]
+        
         # Nhận thông tin filter từ frontend
         enable_text_keyword = data.get("enableTextKeyword", use_keyword)
         enable_object_keyword = data.get("enableObjectKeyword", use_object) 
@@ -639,13 +950,14 @@ def api_search():
         print(f"Search request: type={search_type}, method={search_method}, query='{query}', object='{object_keyword}'")
         print(f"Thresholds: adaptive={adaptive_threshold}, text={text_confidence}, object={object_confidence}")
         print(f"Enabled filters: text={enable_text_keyword}, object={enable_object_keyword}, clip={enable_clip_similarity}")
+        print(f"Video filter: {video_name}")
         print(f"Keyword: '{keyword}'")
         
         results = []
         
         if search_type == "image" and image_url:
             # Tìm kiếm bằng hình ảnh - áp dụng ngưỡng adaptive_threshold trực tiếp
-            image_results = search_by_image(image_url, adaptive_threshold, top_k)
+            image_results = search_by_image(image_url, adaptive_threshold, top_k, video_name)
             results = image_results
             print(f"Image search returned {len(image_results)} results")
         
@@ -653,14 +965,25 @@ def api_search():
             # Sử dụng phương pháp truy vấn dựa trên search_method và áp dụng các ngưỡng trực tiếp
             if search_method == "text_clip":
                 # Truy vấn bằng văn bản thuần (CLIP Similarity)
-                results = query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence, format_event_for_frontend)
+                results = query_by_text_clip(
+                    query, top_k, 
+                    search_top_frames,
+                    extract_query_confidence, 
+                    format_event_for_frontend,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
+                )
                 print(f"Text CLIP search returned {len(results)} results")
             
             elif search_method == "text_adaptive":
                 # Truy vấn bằng văn bản + Adaptive threshold - áp dụng ngưỡng trực tiếp
                 results = query_by_text_with_adaptive_threshold(
                     query, adaptive_threshold, top_k, 
-                    search_top_frames, extract_query_confidence, format_event_for_frontend
+                    search_top_frames,
+                    extract_query_confidence, 
+                    format_event_for_frontend,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
                 print(f"Text adaptive search returned {len(results)} results")
             
@@ -669,7 +992,10 @@ def api_search():
                 actual_query = keyword if keyword else query
                 results = query_by_keyword(
                     actual_query, text_confidence, top_k, 
-                    search_frames_by_keyword, format_event_for_frontend
+                    search_frames_by_keyword, 
+                    format_event_for_frontend,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
                 print(f"Keyword only search returned {len(results)} results")
             
@@ -680,9 +1006,14 @@ def api_search():
                 
                 results = query_by_text_and_keyword(
                     query, adaptive_threshold, top_k,
-                    search_top_frames, extract_query_confidence, 
-                    search_frames_by_keyword, format_event_for_frontend,
-                    keyword=actual_keyword, text_confidence=text_confidence
+                    search_top_frames,
+                    extract_query_confidence, 
+                    search_frames_by_keyword,
+                    format_event_for_frontend,
+                    keyword=actual_keyword, 
+                    text_confidence=text_confidence,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
                 print(f"Text+keyword search returned {len(results)} results")
             
@@ -691,7 +1022,12 @@ def api_search():
                 actual_query = object_keyword if object_keyword else query
                 print(f"Searching for object with keyword: '{actual_query}'")
                 
-                results = query_by_object(actual_query, object_confidence, top_k, format_event_for_frontend)
+                results = query_by_object(
+                    actual_query, object_confidence, top_k, 
+                    format_event_for_frontend, 
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
+                )
                 print(f"Object only search returned {len(results)} results")
                 
             elif search_method == "text_object":
@@ -701,9 +1037,13 @@ def api_search():
                 
                 results = query_by_text_and_object(
                     query, adaptive_threshold, top_k,
-                    search_top_frames, extract_query_confidence, 
+                    search_top_frames,
+                    extract_query_confidence, 
                     format_event_for_frontend,
-                    object_keyword=actual_object, object_confidence=object_confidence
+                    object_keyword=actual_object, 
+                    object_confidence=object_confidence,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
                 print(f"Text+object search returned {len(results)} results")
             
@@ -714,10 +1054,16 @@ def api_search():
                 
                 results = query_by_text_object_and_keyword(
                     query, adaptive_threshold, top_k,
-                    search_top_frames, extract_query_confidence,
-                    search_frames_by_keyword, format_event_for_frontend,
-                    keyword=actual_keyword, text_confidence=text_confidence,
-                    object_keyword=actual_object, object_confidence=object_confidence
+                    search_top_frames,
+                    extract_query_confidence,
+                    search_frames_by_keyword,
+                    format_event_for_frontend,
+                    keyword=actual_keyword, 
+                    text_confidence=text_confidence,
+                    object_keyword=actual_object, 
+                    object_confidence=object_confidence,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
                 print(f"Text+object+keyword search returned {len(results)} results")
             
@@ -725,7 +1071,11 @@ def api_search():
             else:
                 results = query_by_text_with_adaptive_threshold(
                     query, adaptive_threshold, top_k, 
-                    search_top_frames, extract_query_confidence, format_event_for_frontend
+                    search_top_frames,
+                    extract_query_confidence, 
+                    format_event_for_frontend,
+                    video_name=video_name,
+                    video_data_mapping=video_data_mapping
                 )
         
         # Đảm bảo tất cả kết quả đều có các trường confidence đầy đủ
@@ -737,8 +1087,24 @@ def api_search():
             if "clip_similarity" not in result:
                 result["clip_similarity"] = 0.0
         
+        # Filter video-specific events if necessary
+        if video_name:
+            # Ensure all results come from the specified video
+            video_path = video_data_mapping.get(video_name, {}).get("video_path")
+            if video_path:
+                results = [r for r in results if r.get("videoId") == f"video-{Path(video_path).stem}"]
+        
         # Sắp xếp kết quả theo confidence
         results = sorted(results, key=lambda x: x["confidence"], reverse=True)
+        
+        search_time = time.time() - start_time
+        print(f"""
+Search completed in {search_time:.2f}s:
+- Query: '{query}'
+- Method: {search_method}
+- Video filter: {video_name or 'All videos'}
+- Results: {len(results)} items found
+""")
         
         return jsonify({"events": results[:top_k]})
             
@@ -754,11 +1120,14 @@ def api_upload_video():
         return jsonify({"error": "No video uploaded"}), 400
         
     video_name = os.path.splitext(video_file.filename)[0]
+    
+    # Directory for extracted frames
     frame_dir = os.path.join(BASE_DIR, video_name)
     frame_dir_process = r"{}".format(frame_dir)
     os.makedirs(frame_dir, exist_ok=True)
     
-    BaseVideo_dir = "E:\\Đồ án chuyên ngành\\testing\\19_12_2024\\static\\video_frame"
+    # Directory for saving the video
+    BaseVideo_dir = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\video_frame"
     dir_save_video = os.path.join(BaseVideo_dir, video_name)
     os.makedirs(dir_save_video, exist_ok=True)
     path_save_video = os.path.join(dir_save_video, video_file.filename)
@@ -768,14 +1137,32 @@ def api_upload_video():
         # Xử lý video
         extract_frames_from_video(path_save_video, frame_dir, threshold=30.0)
         
-        # Trích xuất embedding
+        # Trích xuất embedding (now saves to video-specific file)
         model_name = "ViT-B/32"
-        output_file = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding/image_embeddings.npy"
-        extract_and_save_embeddings_from_folder(frame_dir, model_name, output_file)
+        embeddings_file = extract_and_save_embeddings_from_folder(frame_dir, model_name, video_name)
         
-        # Xử lý metadata
-        json_output_path = FRAMES_JSON
-        process_images_in_folder(frame_dir_process, json_output_path, path_save_video)
+        # Xử lý metadata (now saves to video-specific file)
+        metadata_file = process_images_in_folder(frame_dir_process, get_default_metadata_path(), path_save_video)
+        
+        # Update the video data mapping with new files
+        video_data_mapping[video_name] = {
+            "metadata_file": metadata_file,
+            "embeddings_file": embeddings_file,
+            "video_path": path_save_video,
+            "frames_dir": frame_dir
+        }
+        
+        # Save the updated mapping
+        save_video_data_mapping()
+        
+        print(f"""
+                Video processing complete:
+                - Video name: {video_name}
+                - Frames extracted: {len(os.listdir(frame_dir))}
+                - Embeddings saved to: {embeddings_file}
+                - Metadata saved to: {metadata_file}
+                - Video mapping updated with {len(video_data_mapping)} videos total
+                """)
         
         # Tạo thông tin video response
         video_info = {
@@ -787,7 +1174,7 @@ def api_upload_video():
             "resolution": get_video_resolution(path_save_video),
             "duration": get_video_duration(path_save_video)
         }
-        
+       
         return jsonify({
             "status": "success",
             "message": "Video processed successfully",
@@ -810,8 +1197,17 @@ def api_serve_frame(frame_path):
         if frame_path in FRAMES_MAPPING:
             return send_file(FRAMES_MAPPING[frame_path], mimetype="image/jpeg")
             
-        # Thử tìm trong output_samples.json
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        # Try to find in video-specific directories
+        frame_name = os.path.basename(frame_path)
+        for video_name, video_info in video_data_mapping.items():
+            frames_dir = video_info.get('frames_dir')
+            if frames_dir and os.path.exists(frames_dir):
+                potential_path = os.path.join(frames_dir, frame_name)
+                if os.path.exists(potential_path):
+                    return send_file(potential_path, mimetype="image/jpeg")
+        
+        # Fallback: Thử tìm trong output_samples.json
+        with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
             data = json.load(f)
         
         for frame_data in data:
@@ -831,9 +1227,17 @@ def api_serve_video(video_path):
         # Kiểm tra nếu là đường dẫn đầy đủ
         if os.path.exists(video_path):
             return send_file(video_path, mimetype="video/mp4")
+        
+        # Check in video mapping
+        video_name = os.path.basename(video_path)
+        for name, info in video_data_mapping.items():
+            if name == video_name or os.path.basename(info.get('video_path', '')) == video_name:
+                full_path = info.get('video_path')
+                if full_path and os.path.exists(full_path):
+                    return send_file(full_path, mimetype="video/mp4")
             
-        # Thử tìm trong output_samples.json
-        with open(FRAMES_JSON, "r", encoding="utf-8") as f:
+        # Fallback: Thử tìm trong output_samples.json
+        with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
             data = json.load(f)
         
         for frame_data in data:
@@ -845,9 +1249,6 @@ def api_serve_video(video_path):
     except Exception as e:
         print(f"Error serving video: {e}")
         return jsonify({"error": str(e)}), 500
-
-# Cần định nghĩa biến này vì được sử dụng trong hàm api_upload_video
-BASE_DIR = "E:\\Đồ án chuyên ngành\\testing\\19_12_2024\\static\\processed_frames"
 
 @app.route('/health', methods=['GET'])
 def health_check():

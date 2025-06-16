@@ -165,11 +165,11 @@ export const EventsSection = () => {
               : 'bg-slate-600'
           } ${!disabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
         >
-          <div
-            className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-300 ${
-              checked ? 'translate-x-5' : 'translate-x-0.5'
-            }`}
-          />
+        <div
+          className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-300 ${
+            checked ? 'translate-x-5' : 'translate-x-0.5'
+          }`}
+        />
         </button>
         <div className="flex items-center gap-1.5">
           {icon}

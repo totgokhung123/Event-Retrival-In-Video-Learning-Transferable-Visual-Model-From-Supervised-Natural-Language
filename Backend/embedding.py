@@ -4,13 +4,36 @@ import clip
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
+from pathlib import Path
 
-def extract_and_save_embeddings_from_folder(folder_path, model_name, output_file):
+def extract_and_save_embeddings_from_folder(folder_path, model_name, video_name=None):
+    """
+    Extract embeddings from all images in a folder and save them to a video-specific file.
+    
+    Args:
+        folder_path: Path to the folder containing images
+        model_name: Name of the CLIP model to use
+        video_name: Name of the video being processed (for naming the output file)
+    
+    Returns:
+        The path to the saved embeddings file
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load(model_name, device=device)
     all_embeddings = []
     image_paths = []
-    print("Extracting embeddings...")
+    
+    # Create embeddings directory if it doesn't exist
+    embeddings_dir = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding"
+    os.makedirs(embeddings_dir, exist_ok=True)
+    
+    # Create a video-specific output file name
+    if not video_name:
+        video_name = Path(folder_path).name
+        
+    output_file = os.path.join(embeddings_dir, f"{video_name}_embeddings.npy")
+    
+    print(f"Extracting embeddings for {video_name}...")
     for root, _, files in os.walk(folder_path):
         for file in tqdm(files):
             if file.lower().endswith(('.jpg', '.jpeg', '.png')):
@@ -26,12 +49,12 @@ def extract_and_save_embeddings_from_folder(folder_path, model_name, output_file
 
                 all_embeddings.append(embedding)
 
+    # Convert to array and save
     all_embeddings = np.array(all_embeddings)
-    if os.path.exists(output_file):
-        existing_embeddings = np.load(output_file)
-        all_embeddings = np.vstack([existing_embeddings, all_embeddings])
     np.save(output_file, all_embeddings)
     print(f"Embeddings saved to {output_file}")
+    
+    return output_file
 
 
 
