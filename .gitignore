@@ -1,6 +1,7 @@
 # Ignore model và video lớn
 *.pt
 *.mp4
+*.mp3
 
 # Ignore thư viện underthesea đã clone
 underthesea/

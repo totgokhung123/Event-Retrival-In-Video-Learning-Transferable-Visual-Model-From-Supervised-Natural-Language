@@ -781,4 +781,4 @@ def query_by_text_object_and_keyword(query, adaptive_threshold, top_k, search_to
         return results[:top_k]
     except Exception as e:
         print(f"Error in text, object and keyword query: {e}")
-        return []
+        return [] 

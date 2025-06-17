@@ -29,6 +29,7 @@ from query_strategies import (
     query_by_text_and_object,
     query_by_text_object_and_keyword
 )
+from werkzeug.utils import secure_filename
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -45,6 +46,10 @@ os.makedirs(EMBEDDING_DIR, exist_ok=True)
 
 # Dictionary to track metadata and embedding files for each video
 video_data_mapping = {}
+
+# Create a directory for voice uploads
+VOICE_DIR = os.path.join(os.path.dirname(__file__), "static", "voice")
+os.makedirs(VOICE_DIR, exist_ok=True)
 
 def load_video_data_mapping():
     """Load mapping between videos and their metadata/embedding files."""
@@ -1248,6 +1253,92 @@ def api_serve_video(video_path):
         abort(404, description=f"Video {video_path} not found")
     except Exception as e:
         print(f"Error serving video: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/transcribe-voice', methods=['POST'])
+def transcribe_voice():
+    """API endpoint for transcribing voice recordings"""
+    try:
+        # Check if a file was uploaded
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+            
+        audio_file = request.files['audio']
+        
+        # Get language selection (default to English)
+        language = request.form.get('language', 'en_us')
+        
+        # Check if the file is valid
+        if audio_file.filename == '':
+            return jsonify({"error": "No audio file selected"}), 400
+            
+        # Save the file temporarily
+        filename = secure_filename(f"voice_{int(time.time())}.mp3")
+        filepath = os.path.join(VOICE_DIR, filename)
+        audio_file.save(filepath)
+        
+        # Set up AssemblyAI API
+        base_url = "https://api.assemblyai.com"
+        headers = {
+            "authorization": "96acc0cd7c1d486aa2e4fe3671647ff2",
+            "content-type": "application/json"
+        }
+        
+        # Upload the file to AssemblyAI
+        with open(filepath, "rb") as f:
+            upload_resp = requests.post(
+                base_url + "/v2/upload",
+                headers={"authorization": headers["authorization"]},
+                data=f
+            )
+            
+        # Check if upload was successful
+        if upload_resp.status_code != 200:
+            return jsonify({"error": "Failed to upload audio to transcription service"}), 500
+            
+        audio_url = upload_resp.json()["upload_url"]
+        
+        # Configure transcription request
+        data = {
+            "audio_url": audio_url,
+            "speech_model": "universal",
+            "language_code": language  # Use selected language
+        }
+        
+        # Create transcription job
+        url = base_url + "/v2/transcript"
+        response = requests.post(url, json=data, headers=headers)
+        
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to create transcription job"}), 500
+            
+        transcript_id = response.json()['id']
+        polling_endpoint = f"{base_url}/v2/transcript/{transcript_id}"
+        
+        # Poll until complete (with timeout)
+        max_attempts = 20
+        attempts = 0
+        
+        while attempts < max_attempts:
+            attempts += 1
+            res = requests.get(polling_endpoint, headers=headers).json()
+            status = res.get("status")
+            
+            if status == 'completed':
+                return jsonify({
+                    "text": res["text"],
+                    "audio_file": filename
+                })
+            elif status == 'error':
+                return jsonify({"error": f"Transcription failed: {res.get('error', 'Unknown error')}"}), 500
+            
+            time.sleep(2)
+            
+        # If we get here, it timed out
+        return jsonify({"error": "Transcription timed out"}), 504
+        
+    except Exception as e:
+        print(f"Error in transcribe_voice: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
