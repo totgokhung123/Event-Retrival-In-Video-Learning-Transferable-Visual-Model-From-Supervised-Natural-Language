@@ -385,3 +385,16 @@ python evaluate_clip.py
 # 4. Phân tích video (đảm bảo đã sửa đường dẫn video)
 python infer_clip.py
 ``` 
+## Run app web
+
+```bash
+# 1. pip install lib necessary in requiment.txt
+
+# 2. run app.py host on port 5000, u can change it.
+python app.py
+
+# 3. run REACT vite frontend 
+cd Frontend
+npm run dev
+``` 
+Chú ý: đảm bảo app.py và frontend chạy song song thông báo server sẵn sàng thì mới load web được. 
