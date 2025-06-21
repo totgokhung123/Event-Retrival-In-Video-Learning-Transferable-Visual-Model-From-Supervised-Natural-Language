@@ -1104,13 +1104,13 @@ def api_search():
         
         search_time = time.time() - start_time
         print(f"""
-Search completed in {search_time:.2f}s:
-- Query: '{query}'
-- Method: {search_method}
-- Video filter: {video_name or 'All videos'}
-- Results: {len(results)} items found
-""")
-        
+                Search completed in {search_time:.2f}s:
+                - Query: '{query}'
+                - Method: {search_method}
+                - Video filter: {video_name or 'All videos'}
+                - Results: {len(results)} items found
+                """)
+                    
         return jsonify({"events": results[:top_k]})
             
     except Exception as e:

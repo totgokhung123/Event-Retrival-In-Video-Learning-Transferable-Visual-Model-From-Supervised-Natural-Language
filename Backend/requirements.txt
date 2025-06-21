@@ -5,6 +5,7 @@ transformers>=4.18.0
 tqdm>=4.64.0
 numpy>=1.19.5
 pillow>=8.0.0
+ultralytics==8.3.49 #yolov8 để deploy model lên roboflow cần cài đặt ultralytics == 8.0.196
 matplotlib>=3.3.4
 tensorboard>=2.14.0
 wordcloud>=1.8.0

@@ -24,7 +24,7 @@ def extract_and_save_embeddings_from_folder(folder_path, model_name, video_name=
     image_paths = []
     
     # Create embeddings directory if it doesn't exist
-    embeddings_dir = "E:/Đồ án tôt nghiệp/source_code/Backend/embedding"
+    embeddings_dir = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding"
     os.makedirs(embeddings_dir, exist_ok=True)
     
     # Create a video-specific output file name
@@ -32,6 +32,8 @@ def extract_and_save_embeddings_from_folder(folder_path, model_name, video_name=
         video_name = Path(folder_path).name
         
     output_file = os.path.join(embeddings_dir, f"{video_name}_embeddings.npy")
+    # Đảm bảo đường dẫn nhất quán với dấu gạch chéo ngược
+    output_file = output_file.replace('/', '\\')
     
     print(f"Extracting embeddings for {video_name}...")
     for root, _, files in os.walk(folder_path):

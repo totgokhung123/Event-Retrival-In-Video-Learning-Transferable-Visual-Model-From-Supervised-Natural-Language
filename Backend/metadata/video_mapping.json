@@ -1,14 +1,20 @@
 {
-	"video_test_3": {
-        "metadata_file": "E:/Đồ án tôt nghiệp/source_code/Backend/metadata\\video_test_3_metadata.json",
-        "embeddings_file": "E:/Đồ án tôt nghiệp/source_code/Backend/embedding\\video_test_3_embeddings.npy",
+    "video_test_3": {
+        "metadata_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata\\video_test_3_metadata.json",
+        "embeddings_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding\\video_test_3_embeddings.npy",
         "video_path": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\video_frame\\video_test_3\\video_test_3.mp4",
         "frames_dir": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\processed_frames\\video_test_3"
     },
     "video_test_4": {
-        "metadata_file": "E:/Đồ án tôt nghiệp/source_code/Backend/metadata\\video_test_4_metadata.json",
-        "embeddings_file": "E:/Đồ án tôt nghiệp/source_code/Backend/embedding\\video_test_4_embeddings.npy",
+        "metadata_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata\\video_test_4_metadata.json",
+        "embeddings_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding\\video_test_4_embeddings.npy",
         "video_path": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\video_frame\\video_test_4\\video_test_4.mp4",
         "frames_dir": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\processed_frames\\video_test_4"
+    },
+    "Violence": {
+        "metadata_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata\\Violence_metadata.json",
+        "embeddings_file": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding\\Violence_embeddings.npy",
+        "video_path": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\video_frame\\Violence\\Violence.mp4",
+        "frames_dir": "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\processed_frames\\Violence"
     }
 }

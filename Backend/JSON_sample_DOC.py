@@ -104,12 +104,14 @@ def process_images_in_folder(folder_path, output_json_path, path_video, max_work
     model = YOLO('yolov8x.pt') 
     
     # Create metadata directory if it doesn't exist
-    metadata_dir = "E:/Đồ án tôt nghiệp/source_code/Backend/metadata"
+    metadata_dir = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata"
     os.makedirs(metadata_dir, exist_ok=True)
     
     # Create video-specific metadata file
     video_name = Path(path_video).stem
     video_metadata_path = os.path.join(metadata_dir, f"{video_name}_metadata.json")
+    # Đảm bảo đường dẫn nhất quán với dấu gạch chéo ngược
+    video_metadata_path = video_metadata_path.replace('/', '\\')
     
     # Initialize with empty data or load existing if exists
     if os.path.exists(video_metadata_path):

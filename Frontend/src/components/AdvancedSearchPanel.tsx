@@ -249,14 +249,21 @@ export const AdvancedSearchPanel = () => {
     if (searchType === 'voice' && transcribedText) {
       // Switch to text search mode but keep the transcribed text
       setSearchType('text');
+      // Đảm bảo textQuery được cập nhật với transcribedText
+      if (textQuery !== transcribedText) {
+        setTextQuery(transcribedText);
+      }
     }
     
     // Update the global context with current filter settings
     updateActiveSearchFilters(filters);
     
     // Cho phép tìm kiếm khi có ít nhất một trong các trường: textQuery, textKeyword hoặc objectKeyword
+    // Đối với voice search, sử dụng transcribedText nếu có
+    const effectiveQuery = searchType === 'voice' && transcribedText ? transcribedText : textQuery;
+    
     if (searchType === 'text' && 
-        !textQuery && 
+        !effectiveQuery && 
         !(filters.enableTextKeyword && filters.textKeyword) && 
         !(filters.enableObjectKeyword && filters.objectKeyword)) {
       setSearchError('Please enter a search query or enable a keyword filter');
@@ -281,6 +288,12 @@ export const AdvancedSearchPanel = () => {
         top_k: 20, // Default number of results
       };
       
+      // Thêm videoId nếu có currentVideo, giúp tìm kiếm chỉ trong video hiện tại
+      if (currentVideo) {
+        searchParams.videoId = currentVideo.id;
+        console.log("Filtering search for video:", currentVideo.title, "ID:", currentVideo.id);
+      }
+      
       // Set specific confidence thresholds based on search method
       const searchMethod = determineSearchMethod();
       console.log("Selected search method:", searchMethod);
@@ -294,7 +307,7 @@ export const AdvancedSearchPanel = () => {
       searchParams.return_all_confidences = true;
       
       // Set search type and query based on input
-      if (searchType === 'text') {
+      if (searchType === 'text' || (searchType === 'voice' && transcribedText)) {
         searchParams.search_type = 'text';
         const searchMethod = determineSearchMethod();
         searchParams.search_method = searchMethod;
@@ -308,23 +321,23 @@ export const AdvancedSearchPanel = () => {
           searchParams.query = filters.objectKeyword || '';
         } else if (searchMethod === 'text_object' && filters.enableObjectKeyword) {
           // Case 6: Text + Object-Keyword
-          searchParams.query = textQuery;
+          searchParams.query = effectiveQuery;
           searchParams.object = filters.objectKeyword || '';
           console.log("Using object keyword:", filters.objectKeyword);
         } else if (searchMethod === 'text_keyword' && filters.enableTextKeyword) {
           // Case 4: Text + Text-Keyword
-          searchParams.query = textQuery;
+          searchParams.query = effectiveQuery;
           searchParams.keyword = filters.textKeyword || '';
           console.log("Using text keyword:", filters.textKeyword);
         } else if (searchMethod === 'text_object_keyword') {
           // Case 7: Combined - prioritize main search query
-          searchParams.query = textQuery;
+          searchParams.query = effectiveQuery;
           searchParams.keyword = filters.textKeyword || '';
           searchParams.object = filters.objectKeyword || '';
           console.log("Using combined keywords - text:", filters.textKeyword, "object:", filters.objectKeyword);
         } else {
           // Other cases: use main search query
-          searchParams.query = textQuery;
+          searchParams.query = effectiveQuery;
         }
 
       } else if (searchType === 'image') {
