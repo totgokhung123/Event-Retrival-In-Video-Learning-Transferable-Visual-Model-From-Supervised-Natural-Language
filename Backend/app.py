@@ -99,7 +99,12 @@ def get_video_metadata_path(video_name=None):
         Path to the metadata file
     """
     if video_name and video_name in video_data_mapping:
-        return video_data_mapping[video_name]["metadata_file"]
+        # Chuẩn hóa đường dẫn để đảm bảo tương thích
+        path = video_data_mapping[video_name]["metadata_file"]
+        # Đảm bảo đường dẫn sử dụng dấu gạch chéo phù hợp với hệ thống
+        path = os.path.normpath(path)
+        print(f"Using metadata file: {path}")
+        return path
     return get_default_metadata_path()
 
 def get_video_embeddings_path(video_name=None):
@@ -113,7 +118,12 @@ def get_video_embeddings_path(video_name=None):
         Path to the embeddings file
     """
     if video_name and video_name in video_data_mapping:
-        return video_data_mapping[video_name]["embeddings_file"]
+        # Chuẩn hóa đường dẫn để đảm bảo tương thích
+        path = video_data_mapping[video_name]["embeddings_file"]
+        # Đảm bảo đường dẫn sử dụng dấu gạch chéo phù hợp với hệ thống
+        path = os.path.normpath(path)
+        print(f"Using embeddings file: {path}")
+        return path
     return get_default_embeddings_path()
 
 def load_frames_from_json(json_path, video_name=None):
@@ -128,9 +138,16 @@ def load_frames_from_json(json_path, video_name=None):
     if video_name:
         json_path = get_video_metadata_path(video_name)
     
-    with open(json_path, 'r', encoding='utf-8') as file:
-        samples = json.load(file)
-    return [os.path.basename(sample["filepath"]) for sample in samples if "filepath" in sample]
+    # Chuẩn hóa đường dẫn để đảm bảo tương thích
+    json_path = os.path.normpath(json_path)
+    
+    try:
+        with open(json_path, 'r', encoding='utf-8') as file:
+            samples = json.load(file)
+        return [os.path.basename(sample["filepath"]) for sample in samples if "filepath" in sample]
+    except Exception as e:
+        print(f"Error loading frames from JSON: {e}, path: {json_path}")
+        return []
 
 def load_frames_mapping_from_json(json_path, video_name=None):
     """
@@ -144,9 +161,16 @@ def load_frames_mapping_from_json(json_path, video_name=None):
     if video_name:
         json_path = get_video_metadata_path(video_name)
     
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        return {Path(sample["filepath"]).name: sample["filepath"] for sample in data}
+    # Chuẩn hóa đường dẫn để đảm bảo tương thích
+    json_path = os.path.normpath(json_path)
+    
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return {Path(sample["filepath"]).name: sample["filepath"] for sample in data}
+    except Exception as e:
+        print(f"Error loading frames mapping from JSON: {e}, path: {json_path}")
+        return {}
 
 FRAMES_MAPPING = load_frames_mapping_from_json(get_default_metadata_path())
 app = Flask(__name__)
@@ -188,7 +212,14 @@ def get_video_resolution(video_path):
 def format_event_for_frontend(frame_data):
     """Format dữ liệu event phù hợp với frontend React."""
     video_path = frame_data.get('video', '')
-    video_id = video_path.split('/')[-1] if video_path else 'unknown'
+    
+    # Tạo videoId từ đường dẫn video
+    if video_path:
+        # Lấy tên file video (không bao gồm phần mở rộng)
+        video_filename = Path(video_path).stem
+        video_id = f"video-{video_filename}"
+    else:
+        video_id = 'unknown'
     
     # Tìm category từ text detection nếu có
     category = "Unknown"
@@ -262,7 +293,7 @@ def format_event_for_frontend(frame_data):
     
     return {
         "id": f"event-{frame_idx}",
-        "videoId": f"video-{video_id}",
+        "videoId": video_id,
         "title": f"Event at frame {frame_idx}",
         "description": description,
         "timestamp": timestamp,
@@ -322,29 +353,55 @@ def extract_query_confidence(frame_path, query, video_name=None):
         video_name: If provided, will use the specific embeddings for this video
     """
     try:
-        # Tokenize và encode query text
-        text_input = clip.tokenize([query]).to(device)
-        with torch.no_grad():
-            text_features = model.encode_text(text_input).cpu().numpy()
-        text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
+        # Sử dụng cache để lưu text features và embeddings
+        # Tạo một key duy nhất cho query và video_name
+        cache_key = f"{query}_{video_name or 'default'}"
         
-        # Determine which embeddings file to use
+        # Kiểm tra xem đã có text features trong cache chưa
+        if not hasattr(extract_query_confidence, 'text_features_cache'):
+            extract_query_confidence.text_features_cache = {}
+            
+        if not hasattr(extract_query_confidence, 'embeddings_cache'):
+            extract_query_confidence.embeddings_cache = {}
+            
+        if not hasattr(extract_query_confidence, 'frames_list_cache'):
+            extract_query_confidence.frames_list_cache = {}
+            
+        # Nếu chưa có text features cho query này, tính và cache lại
+        if cache_key not in extract_query_confidence.text_features_cache:
+            text_input = clip.tokenize([query]).to(device)
+            with torch.no_grad():
+                text_features = model.encode_text(text_input).cpu().numpy()
+            text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
+            extract_query_confidence.text_features_cache[cache_key] = text_features
+        else:
+            text_features = extract_query_confidence.text_features_cache[cache_key]
+        
+        # Lấy đường dẫn embeddings
         embeddings_path = get_video_embeddings_path(video_name)
         
-        # Check if embeddings file exists
-        if not os.path.exists(embeddings_path):
-            print(f"Warning: Embeddings file not found: {embeddings_path}")
-            return 0.0
-            
-        # Load embeddings
-        embeddings = np.load(embeddings_path)
-        embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
+        # Kiểm tra nếu đã có embeddings trong cache
+        if embeddings_path not in extract_query_confidence.embeddings_cache:
+            # Check if embeddings file exists
+            if not os.path.exists(embeddings_path):
+                print(f"Warning: Embeddings file not found: {embeddings_path}")
+                return 0.0
+                
+            # Load embeddings
+            embeddings = np.load(embeddings_path)
+            embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
+            extract_query_confidence.embeddings_cache[embeddings_path] = embeddings
+        else:
+            embeddings = extract_query_confidence.embeddings_cache[embeddings_path]
         
-        # Determine which JSON file to use
+        # Lấy danh sách frames
         json_path = get_video_metadata_path(video_name)
-            
-        # Load frame list
-        all_files = load_frames_from_json(json_path, video_name)
+        if json_path not in extract_query_confidence.frames_list_cache:
+            # Load frame list
+            all_files = load_frames_from_json(json_path, video_name)
+            extract_query_confidence.frames_list_cache[json_path] = all_files
+        else:
+            all_files = extract_query_confidence.frames_list_cache[json_path]
         
         # Find frame index
         try:
@@ -412,32 +469,74 @@ def search_top_frames(query, top_k, video_name=None):
         top_k: Number of top results to return
         video_name: If provided, search only within this video's frames
     """
-    text_input = clip.tokenize([query]).to(device)
-    with torch.no_grad():
-        text_features = model.encode_text(text_input).cpu().numpy()
+    try:
+        # Tạo một key duy nhất cho query và video_name
+        cache_key = f"{query}_{video_name or 'default'}"
+        
+        # Khởi tạo cache cho kết quả tìm kiếm nếu chưa có
+        if not hasattr(search_top_frames, 'results_cache'):
+            search_top_frames.results_cache = {}
+            
+        # Nếu đã có kết quả trong cache, trả về ngay lập tức
+        if cache_key in search_top_frames.results_cache:
+            return search_top_frames.results_cache[cache_key][:top_k]
+            
+        # Nếu không có cache, thực hiện tìm kiếm
+        text_input = clip.tokenize([query]).to(device)
+        with torch.no_grad():
+            text_features = model.encode_text(text_input).cpu().numpy()
 
-    text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
-    
-    # Determine which embeddings and frames to use based on video_name
-    embeddings_file = get_video_embeddings_path(video_name)
-    json_path = get_video_metadata_path(video_name)
-    
-    # Load embeddings
-    embeddings = np.load(embeddings_file)
-    embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
+        text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
+        
+        # Determine which embeddings and frames to use based on video_name
+        embeddings_file = get_video_embeddings_path(video_name)
+        json_path = get_video_metadata_path(video_name)
+        
+        # Load embeddings
+        try:
+            # Sử dụng embedding cache từ extract_query_confidence nếu có
+            if hasattr(extract_query_confidence, 'embeddings_cache') and embeddings_file in extract_query_confidence.embeddings_cache:
+                embeddings = extract_query_confidence.embeddings_cache[embeddings_file]
+            else:
+                embeddings = np.load(embeddings_file)
+                embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
+                # Lưu vào cache cho lần sau
+                if not hasattr(extract_query_confidence, 'embeddings_cache'):
+                    extract_query_confidence.embeddings_cache = {}
+                extract_query_confidence.embeddings_cache[embeddings_file] = embeddings
 
-    # FAISS expects float32
-    embeddings = embeddings.astype('float32')
-    text_features = text_features.astype('float32')
+            # FAISS expects float32
+            embeddings = embeddings.astype('float32')
+            text_features = text_features.astype('float32')
 
-    # Dùng chỉ mục FAISS cho cosine similarity (Inner Product)
-    index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings)
-    D, I = index.search(text_features, top_k)  # text_features shape: (1, dim)
+            # Dùng chỉ mục FAISS cho cosine similarity (Inner Product)
+            index = faiss.IndexFlatIP(embeddings.shape[1])
+            index.add(embeddings)
+            D, I = index.search(text_features, top_k)  # text_features shape: (1, dim)
 
-    all_files = load_frames_from_json(json_path, video_name)
-    top_indices = I[0]
-    return [all_files[i] for i in top_indices]
+            # Sử dụng frame list cache từ extract_query_confidence nếu có
+            if hasattr(extract_query_confidence, 'frames_list_cache') and json_path in extract_query_confidence.frames_list_cache:
+                all_files = extract_query_confidence.frames_list_cache[json_path]
+            else:
+                all_files = load_frames_from_json(json_path, video_name)
+                # Lưu vào cache cho lần sau
+                if not hasattr(extract_query_confidence, 'frames_list_cache'):
+                    extract_query_confidence.frames_list_cache = {}
+                extract_query_confidence.frames_list_cache[json_path] = all_files
+            
+            top_indices = I[0]
+            results = [all_files[i] for i in top_indices if i < len(all_files)]
+            
+            # Lưu kết quả vào cache
+            search_top_frames.results_cache[cache_key] = results
+            
+            return results
+        except Exception as e:
+            print(f"Error loading embeddings: {e}")
+            return []
+    except Exception as e:
+        print(f"Error in search_top_frames: {e}")
+        return []
 
 def search_top_frames_by_image(image_features, top_k, video_name=None):
     """
@@ -448,16 +547,27 @@ def search_top_frames_by_image(image_features, top_k, video_name=None):
         top_k: Number of top results to return
         video_name: If provided, search only within this video's frames
     """
-    # Determine which embeddings and frames to use based on video_name
-    embeddings_file = get_video_embeddings_path(video_name)
-    json_path = get_video_metadata_path(video_name)
+    try:
+        # Determine which embeddings and frames to use based on video_name
+        embeddings_file = get_video_embeddings_path(video_name)
+        json_path = get_video_metadata_path(video_name)
         
-    # Load embeddings
-    embeddings = np.load(embeddings_file)
-    similarities = np.dot(embeddings, image_features.T).flatten()
-    top_indices = np.argsort(similarities)[-top_k:][::-1]
-    all_files = load_frames_from_json(json_path, video_name)
-    return [all_files[i] for i in top_indices]
+        print(f"Loading embeddings from: {embeddings_file}")
+        print(f"Loading JSON from: {json_path}")
+            
+        # Load embeddings
+        try:
+            embeddings = np.load(embeddings_file)
+            similarities = np.dot(embeddings, image_features.T).flatten()
+            top_indices = np.argsort(similarities)[-top_k:][::-1]
+            all_files = load_frames_from_json(json_path, video_name)
+            return [all_files[i] for i in top_indices if i < len(all_files)]
+        except Exception as e:
+            print(f"Error loading embeddings for image search: {e}")
+            return []
+    except Exception as e:
+        print(f"Error in search_top_frames_by_image: {e}")
+        return []
 
 # Thêm 7 hàm xử lý truy vấn mới
 def search_by_image(image_url, adaptive_threshold, top_k, video_name=None):
@@ -1097,10 +1207,27 @@ def api_search():
             # Ensure all results come from the specified video
             video_path = video_data_mapping.get(video_name, {}).get("video_path")
             if video_path:
-                results = [r for r in results if r.get("videoId") == f"video-{Path(video_path).stem}"]
+                print(f"Before filtering: {len(results)} results")
+                
+                # Lấy tên file video để so sánh
+                video_filename = Path(video_path).stem
+                expected_video_id = f"video-{video_filename}"
+                
+                # Sửa điều kiện lọc để kiểm tra cả tên file video
+                filtered_results = []
+                for r in results:
+                    r_video_id = r.get("videoId")
+                    # Kiểm tra nhiều dạng videoId có thể có
+                    if (r_video_id == f"video-{video_name}" or 
+                        r_video_id == expected_video_id or
+                        video_filename in r_video_id):
+                        filtered_results.append(r)
+                
+                results = filtered_results
+                print(f"After filtering for video '{video_name}': {len(results)} results")
         
         # Sắp xếp kết quả theo confidence
-        results = sorted(results, key=lambda x: x["confidence"], reverse=True)
+        results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
         
         search_time = time.time() - start_time
         print(f"""

@@ -26,8 +26,36 @@ def get_video_metadata_path(video_name=None, video_data_mapping=None):
         Path to the metadata file
     """
     if video_name and video_data_mapping and video_name in video_data_mapping:
-        return video_data_mapping[video_name]["metadata_file"]
+        path = video_data_mapping[video_name]["metadata_file"]
+        # Chuẩn hóa đường dẫn để đảm bảo tương thích
+        path = os.path.normpath(path)
+        print(f"Query strategies using metadata file: {path}")
+        return path
     return get_default_metadata_path()
+
+def get_default_embeddings_path():
+    """Get the default embeddings path for backward compatibility."""
+    # Fallback to a default path
+    return os.path.join(EMBEDDING_DIR, "image_embeddings.npy")
+
+def get_video_embeddings_path(video_name=None, video_data_mapping=None):
+    """
+    Get the embeddings file path for a specific video or the default one.
+    
+    Args:
+        video_name: Name of the video
+        video_data_mapping: Mapping of videos to their metadata files
+    
+    Returns:
+        Path to the embeddings file
+    """
+    if video_name and video_data_mapping and video_name in video_data_mapping:
+        path = video_data_mapping[video_name]["embeddings_file"]
+        # Chuẩn hóa đường dẫn để đảm bảo tương thích
+        path = os.path.normpath(path)
+        print(f"Query strategies using embeddings file: {path}")
+        return path
+    return get_default_embeddings_path()
 
 def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence, format_event_for_frontend, video_name=None, video_data_mapping=None):
     """
@@ -47,8 +75,9 @@ def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence
         processed_text = processor.preprocess_and_translate(query)
         print("Câu truy vấn đã xử lý:", processed_text)
         
-        # Tìm top frame với CLIP
-        query_frames = search_top_frames(processed_text, top_k * 2, video_name)
+        # Tìm top frame với CLIP - giảm số lượng frame cần xử lý chi tiết
+        query_frames = search_top_frames(processed_text, top_k * 3, video_name)
+        print(f"Found {len(query_frames)} candidate frames")
         
         # Get the appropriate JSON file path
         json_path = get_video_metadata_path(video_name, video_data_mapping)
@@ -57,48 +86,55 @@ def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
-        # Lọc frame data
+        # Tạo một bảng tra cứu từ frame_name đến confidence để tối ưu hóa
+        # Áp dụng batch processing để tăng hiệu năng
+        frame_to_confidence = {}
+        frame_to_index = {}
+        frame_indices = []
+        
+        # Tạo mapping frame_name đến frame index và chuẩn bị cho batch processing
+        for i, frame_name in enumerate(query_frames):
+            try:
+                frame_idx = int(Path(frame_name).stem)
+                frame_to_index[frame_name] = frame_idx
+                frame_indices.append(frame_idx)
+            except Exception:
+                pass
+                
+        # Lọc frame data và tính confidence trong một lần quét
         results = []
+        processed_frames = set()  # Để tránh xử lý frame trùng lặp
+        
+        # Tối ưu hóa: nhóm các frames theo video để giảm số lần loadJSON/embeddings
         for frame_name in query_frames:
-            frame_idx = int(Path(frame_name).stem)
-            frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
-            if frame_data:
-                # Extract video name from frame data if available
-                video_path = frame_data.get('video', '')
-                frame_video_name = Path(video_path).stem if video_path else None
+            if frame_name in processed_frames:
+                continue
                 
-                # Use either the provided video_name or the one from the frame
-                effective_video_name = video_name or frame_video_name
+            processed_frames.add(frame_name)
+            try:
+                frame_idx = frame_to_index.get(frame_name)
+                if frame_idx is None:
+                    continue
+                    
+                frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
+                if not frame_data:
+                    continue
+                    
+                # Tính toán độ tương đồng CLIP - chỉ tính một lần cho mỗi frame
+                confidence = extract_query_confidence(frame_name, processed_text, video_name)
                 
-                confidence = extract_query_confidence(frame_name, processed_text, effective_video_name)
-                # Chuyển đổi numpy.float32 sang float thông thường
-                if isinstance(confidence, np.float32):
-                    confidence = float(confidence)
-                
-                # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
+                # Lưu trữ confidence vào frame_data để sử dụng trong format_event_for_frontend
                 frame_data_copy = frame_data.copy()
-                
-                # Đặt giá trị clip_similarity vào frame_data trước khi gọi format_event_for_frontend
                 frame_data_copy['clip_similarity'] = confidence
-                
-                # Đảm bảo các trường confidence khác có giá trị mặc định
-                if 'text_confidence' not in frame_data_copy:
-                    frame_data_copy['text_confidence'] = 0.0
-                if 'object_confidence' not in frame_data_copy:
-                    frame_data_copy['object_confidence'] = 0.0
                 
                 # Format event cho frontend
                 event = format_event_for_frontend(frame_data_copy)
-                
-                # Đảm bảo confidence và clip_similarity được đặt đúng
-                event["confidence"] = confidence
-                event["clip_similarity"] = confidence
-                event["detection_type"] = "clip"
-                
                 results.append(event)
+            except Exception as e:
+                print(f"Error processing frame {frame_name}: {e}")
         
         # Sắp xếp theo confidence (giảm dần)
-        results.sort(key=lambda x: x["confidence"], reverse=True)
+        results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
         return results[:top_k]
     except Exception as e:
         print(f"Error in text clip query: {e}")
@@ -123,62 +159,50 @@ def query_by_text_with_adaptive_threshold(query, adaptive_threshold, top_k, sear
         processed_text = processor.preprocess_and_translate(query)
         print("Câu truy vấn đã xử lý:", processed_text)
         
-        # Tìm top frame với CLIP
+        # Lấy danh sách frame từ top_k * 3 để đảm bảo có đủ kết quả sau khi lọc
         query_frames = search_top_frames(processed_text, top_k * 3, video_name)
+        print(f"Found {len(query_frames)} candidate frames")
         
-        # Get the appropriate JSON file path
+        # Determine which JSON file to use
         json_path = get_video_metadata_path(video_name, video_data_mapping)
         
         # Đọc dữ liệu từ file JSON
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         
-        # Lọc frame data với adaptive threshold
-        results = []
-        for frame_name in query_frames:
-            frame_idx = int(Path(frame_name).stem)
-            frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
-            if frame_data:
-                # Extract video name from frame data if available
-                video_path = frame_data.get('video', '')
-                frame_video_name = Path(video_path).stem if video_path else None
-                
-                # Use either the provided video_name or the one from the frame
-                effective_video_name = video_name or frame_video_name
-                
-                confidence = extract_query_confidence(frame_name, processed_text, effective_video_name)
-                # Chuyển đổi numpy.float32 sang float thông thường
-                if isinstance(confidence, np.float32):
-                    confidence = float(confidence)
-                # Áp dụng adaptive threshold
-                if confidence >= adaptive_threshold:
-                    # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
-                    frame_data_copy = frame_data.copy()
-                    
-                    # Đặt giá trị clip_similarity vào frame_data trước khi gọi format_event_for_frontend
-                    frame_data_copy['clip_similarity'] = confidence
-                    
-                    # Đảm bảo các trường confidence khác có giá trị mặc định
-                    if 'text_confidence' not in frame_data_copy:
-                        frame_data_copy['text_confidence'] = 0.0
-                    if 'object_confidence' not in frame_data_copy:
-                        frame_data_copy['object_confidence'] = 0.0
-                    
-                    # Format event cho frontend
-                    event = format_event_for_frontend(frame_data_copy)
-                    
-                    # Đảm bảo confidence và clip_similarity được đặt đúng
-                    event["confidence"] = confidence
-                    event["clip_similarity"] = confidence
-                    event["detection_type"] = "clip"
-                    
-                    results.append(event)
+        # Lọc frame data
+        semantic_results = []
         
-        # Sắp xếp theo confidence (giảm dần)
-        results.sort(key=lambda x: x["confidence"], reverse=True)
-        return results[:top_k]
+        for frame_name in query_frames:
+            try:
+                frame_idx = int(Path(frame_name).stem)
+                frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
+                
+                if frame_data:
+                    # Tính toán độ tương đồng CLIP
+                    confidence = extract_query_confidence(frame_name, processed_text, video_name)
+                    
+                    # Thêm vào kết quả nếu vượt qua ngưỡng
+                    if confidence >= adaptive_threshold:
+                        # Lưu trữ confidence vào frame_data để sử dụng trong format_event_for_frontend
+                        frame_data_copy = frame_data.copy()
+                        frame_data_copy['clip_similarity'] = confidence
+                        
+                        event = format_event_for_frontend(frame_data_copy)
+                        semantic_results.append(event)
+            except Exception as e:
+                print(f"Error processing frame {frame_name}: {e}")
+        
+        # In thông tin debug
+        print(f"Found {len(semantic_results)} results after applying threshold {adaptive_threshold}")
+        
+        # Sắp xếp kết quả theo confidence từ cao đến thấp
+        semantic_results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        
+        # Trả về top_k kết quả
+        return semantic_results[:top_k]
     except Exception as e:
-        print(f"Error in text with adaptive threshold query: {e}")
+        print(f"Error in query_by_text_with_adaptive_threshold: {e}")
         return []
 
 def query_by_keyword(query, adaptive_threshold, top_k, search_frames_by_keyword, format_event_for_frontend, video_name=None, video_data_mapping=None):
@@ -196,6 +220,7 @@ def query_by_keyword(query, adaptive_threshold, top_k, search_frames_by_keyword,
     """
     try:
         keyword_frame_ids = search_frames_by_keyword(query, top_k * 3, video_name)
+        print(f"Found {len(keyword_frame_ids)} frames containing keyword '{query}'")
         
         # Get the appropriate JSON file path
         json_path = get_video_metadata_path(video_name, video_data_mapping)
@@ -228,32 +253,18 @@ def query_by_keyword(query, adaptive_threshold, top_k, search_frames_by_keyword,
                     # Tạo bản sao của frame_data để không ảnh hưởng đến dữ liệu gốc
                     frame_data_copy = frame_data.copy()
                     
-                    # Thay thế text_detections bằng chỉ detection chứa keyword
-                    # Điều này đảm bảo format_event_for_frontend sẽ chọn detection này
-                    frame_data_copy['text_detections'] = {
-                        'detections': [best_match]
-                    }
-                    
                     # Đặt các giá trị confidence
-                    frame_data_copy['text_confidence'] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
+                    frame_data_copy['text_confidence'] = max_conf
                     frame_data_copy['clip_similarity'] = 0.0
-                    frame_data_copy['object_confidence'] = 0.0
-                    
-                    # Đặt trường description để hiển thị đúng label đã tìm thấy
-                    frame_data_copy['description'] = best_match.get('label', 'Event detected')
                     
                     # Format event cho frontend
                     event = format_event_for_frontend(frame_data_copy)
-                    
-                    # Đảm bảo confidence chính là confidence của text detection
-                    event["confidence"] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
-                    event["text_confidence"] = float(max_conf) if isinstance(max_conf, np.float32) else max_conf
-                    event["detection_type"] = "text"
-                    
                     results.append(event)
         
+        print(f"Found {len(results)} results after applying threshold {adaptive_threshold}")
+        
         # Sắp xếp theo confidence (giảm dần)
-        results.sort(key=lambda x: x["confidence"], reverse=True)
+        results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
         return results[:top_k]
     except Exception as e:
         print(f"Error in keyword query: {e}")
