@@ -29,33 +29,9 @@ def get_video_metadata_path(video_name=None, video_data_mapping=None):
         path = video_data_mapping[video_name]["metadata_file"]
         # Chuẩn hóa đường dẫn để đảm bảo tương thích
         path = os.path.normpath(path)
-        print(f"Query strategies using metadata file: {path}")
+        print(f"Query strategies using metadata file bên hàm xử lý: {path}")
         return path
     return get_default_metadata_path()
-
-def get_default_embeddings_path():
-    """Get the default embeddings path for backward compatibility."""
-    # Fallback to a default path
-    return os.path.join(EMBEDDING_DIR, "image_embeddings.npy")
-
-def get_video_embeddings_path(video_name=None, video_data_mapping=None):
-    """
-    Get the embeddings file path for a specific video or the default one.
-    
-    Args:
-        video_name: Name of the video
-        video_data_mapping: Mapping of videos to their metadata files
-    
-    Returns:
-        Path to the embeddings file
-    """
-    if video_name and video_data_mapping and video_name in video_data_mapping:
-        path = video_data_mapping[video_name]["embeddings_file"]
-        # Chuẩn hóa đường dẫn để đảm bảo tương thích
-        path = os.path.normpath(path)
-        print(f"Query strategies using embeddings file: {path}")
-        return path
-    return get_default_embeddings_path()
 
 def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence, format_event_for_frontend, video_name=None, video_data_mapping=None):
     """

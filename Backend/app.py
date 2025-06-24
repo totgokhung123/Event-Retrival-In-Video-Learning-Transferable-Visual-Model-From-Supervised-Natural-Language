@@ -31,7 +31,6 @@ from query_strategies import (
 )
 from werkzeug.utils import secure_filename
 
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
@@ -103,7 +102,7 @@ def get_video_metadata_path(video_name=None):
         path = video_data_mapping[video_name]["metadata_file"]
         # Đảm bảo đường dẫn sử dụng dấu gạch chéo phù hợp với hệ thống
         path = os.path.normpath(path)
-        print(f"Using metadata file: {path}")
+        print(f"Using metadata file lấy dữ liệu: {path}")
         return path
     return get_default_metadata_path()
 
@@ -122,14 +121,13 @@ def get_video_embeddings_path(video_name=None):
         path = video_data_mapping[video_name]["embeddings_file"]
         # Đảm bảo đường dẫn sử dụng dấu gạch chéo phù hợp với hệ thống
         path = os.path.normpath(path)
-        print(f"Using embeddings file: {path}")
+        print(f"Using embeddings file lấy dữ liệu: {path}")
         return path
     return get_default_embeddings_path()
 
 def load_frames_from_json(json_path, video_name=None):
     """
     Load danh sách tên file từ file JSON.
-    
     Args:
         json_path: Path to JSON file or video name
         video_name: If provided, will load frames for this specific video
@@ -367,6 +365,13 @@ def extract_query_confidence(frame_path, query, video_name=None):
         if not hasattr(extract_query_confidence, 'frames_list_cache'):
             extract_query_confidence.frames_list_cache = {}
             
+        # Thêm cache cho đường dẫn file
+        if not hasattr(extract_query_confidence, 'path_cache'):
+            extract_query_confidence.path_cache = {}
+            
+        # Tạo key cho cache đường dẫn
+        path_cache_key = f"paths_{video_name or 'default'}"
+        
         # Nếu chưa có text features cho query này, tính và cache lại
         if cache_key not in extract_query_confidence.text_features_cache:
             text_input = clip.tokenize([query]).to(device)
@@ -377,8 +382,20 @@ def extract_query_confidence(frame_path, query, video_name=None):
         else:
             text_features = extract_query_confidence.text_features_cache[cache_key]
         
-        # Lấy đường dẫn embeddings
-        embeddings_path = get_video_embeddings_path(video_name)
+        # Kiểm tra và sử dụng cache đường dẫn
+        if path_cache_key not in extract_query_confidence.path_cache:
+            print("Dong nay lay embeddings cho extract_query_confidence\n")
+            # Lấy đường dẫn embeddings và metadata một lần và lưu vào cache
+            embeddings_path = get_video_embeddings_path(video_name)
+            json_path = get_video_metadata_path(video_name)
+            extract_query_confidence.path_cache[path_cache_key] = {
+                'embeddings_path': embeddings_path,
+                'json_path': json_path
+            }
+        else:
+            # Sử dụng đường dẫn từ cache
+            embeddings_path = extract_query_confidence.path_cache[path_cache_key]['embeddings_path']
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
         
         # Kiểm tra nếu đã có embeddings trong cache
         if embeddings_path not in extract_query_confidence.embeddings_cache:
@@ -386,7 +403,8 @@ def extract_query_confidence(frame_path, query, video_name=None):
             if not os.path.exists(embeddings_path):
                 print(f"Warning: Embeddings file not found: {embeddings_path}")
                 return 0.0
-                
+            
+            print("Dong nay tính toán embeddings\n")    
             # Load embeddings
             embeddings = np.load(embeddings_path)
             embeddings = embeddings / np.linalg.norm(embeddings, axis=-1, keepdims=True)
@@ -394,8 +412,8 @@ def extract_query_confidence(frame_path, query, video_name=None):
         else:
             embeddings = extract_query_confidence.embeddings_cache[embeddings_path]
         
-        # Lấy danh sách frames
-        json_path = get_video_metadata_path(video_name)
+        print("Dong nay lay frames cho extract_query_confidence\n")
+        # Lấy danh sách frames từ cache hoặc load mới
         if json_path not in extract_query_confidence.frames_list_cache:
             # Load frame list
             all_files = load_frames_from_json(json_path, video_name)
@@ -488,9 +506,26 @@ def search_top_frames(query, top_k, video_name=None):
 
         text_features = text_features / np.linalg.norm(text_features, axis=-1, keepdims=True)
         
-        # Determine which embeddings and frames to use based on video_name
-        embeddings_file = get_video_embeddings_path(video_name)
-        json_path = get_video_metadata_path(video_name)
+        print("Dong nay lấy dữ liệu cả 2 trong search_top_frames\n")
+        
+        # Kiểm tra xem có cache đường dẫn từ extract_query_confidence không
+        path_cache_key = f"paths_{video_name or 'default'}"
+        if (hasattr(extract_query_confidence, 'path_cache') and 
+            path_cache_key in extract_query_confidence.path_cache):
+            # Sử dụng đường dẫn từ cache
+            embeddings_file = extract_query_confidence.path_cache[path_cache_key]['embeddings_path']
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
+        else:
+            # Determine which embeddings and frames to use based on video_name
+            embeddings_file = get_video_embeddings_path(video_name)
+            json_path = get_video_metadata_path(video_name)
+            
+            # Lưu vào cache nếu extract_query_confidence có cache
+            if hasattr(extract_query_confidence, 'path_cache'):
+                extract_query_confidence.path_cache[path_cache_key] = {
+                    'embeddings_path': embeddings_file,
+                    'json_path': json_path
+                }
         
         # Load embeddings
         try:
@@ -598,9 +633,29 @@ def search_by_image(image_url, adaptive_threshold, top_k, video_name=None):
         # Tìm kiếm các frame phù hợp
         top_frames = search_top_frames_by_image(image_features, top_k * 5, video_name)
         
-        # Determine which JSON file to use
-        json_path = get_video_metadata_path(video_name)
+        # Kiểm tra xem có cache đường dẫn từ extract_query_confidence không
+        path_cache_key = f"paths_{video_name or 'default'}"
+        if (hasattr(extract_query_confidence, 'path_cache') and 
+            path_cache_key in extract_query_confidence.path_cache):
+            # Sử dụng đường dẫn từ cache
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
+        else:
+            # Determine which JSON file to use
+            json_path = get_video_metadata_path(video_name)
             
+            # Lưu vào cache nếu extract_query_confidence có cache
+            if hasattr(extract_query_confidence, 'path_cache'):
+                if 'embeddings_path' not in extract_query_confidence.path_cache.get(path_cache_key, {}):
+                    # Nếu chưa có embeddings_path, cần lấy thêm
+                    embeddings_path = get_video_embeddings_path(video_name)
+                    extract_query_confidence.path_cache[path_cache_key] = {
+                        'embeddings_path': embeddings_path,
+                        'json_path': json_path
+                    }
+                else:
+                    # Nếu đã có embeddings_path, chỉ cập nhật json_path
+                    extract_query_confidence.path_cache[path_cache_key]['json_path'] = json_path
+        
         # Đọc dữ liệu từ file JSON
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -641,8 +696,30 @@ def search_semantic_with_clip(query, adaptive_threshold, top_k, video_name=None)
         
         query_frames = search_top_frames(processed_text, top_k * 5, video_name)
         
-        # Determine which JSON file to use
-        json_path = get_video_metadata_path(video_name)
+        print("Dong nay lấy dữ liệu metadata trong search_semantic_with_clip\n")
+        
+        # Kiểm tra xem có cache đường dẫn từ extract_query_confidence không
+        path_cache_key = f"paths_{video_name or 'default'}"
+        if (hasattr(extract_query_confidence, 'path_cache') and 
+            path_cache_key in extract_query_confidence.path_cache):
+            # Sử dụng đường dẫn từ cache
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
+        else:
+            # Determine which JSON file to use
+            json_path = get_video_metadata_path(video_name)
+            
+            # Lưu vào cache nếu extract_query_confidence có cache
+            if hasattr(extract_query_confidence, 'path_cache'):
+                if 'embeddings_path' not in extract_query_confidence.path_cache.get(path_cache_key, {}):
+                    # Nếu chưa có embeddings_path, cần lấy thêm
+                    embeddings_path = get_video_embeddings_path(video_name)
+                    extract_query_confidence.path_cache[path_cache_key] = {
+                        'embeddings_path': embeddings_path,
+                        'json_path': json_path
+                    }
+                else:
+                    # Nếu đã có embeddings_path, chỉ cập nhật json_path
+                    extract_query_confidence.path_cache[path_cache_key]['json_path'] = json_path
         
         # Đọc dữ liệu từ file JSON
         with open(json_path, "r", encoding="utf-8") as f:
@@ -682,8 +759,28 @@ def search_by_keyword(query, adaptive_threshold, top_k, video_name=None):
         keyword_frame_ids = search_frames_by_keyword(query, top_k * 3, video_name)
         keyword_results = []
         
-        # Determine which JSON file to use
-        json_path = get_video_metadata_path(video_name)
+        # Kiểm tra xem có cache đường dẫn từ extract_query_confidence không
+        path_cache_key = f"paths_{video_name or 'default'}"
+        if (hasattr(extract_query_confidence, 'path_cache') and 
+            path_cache_key in extract_query_confidence.path_cache):
+            # Sử dụng đường dẫn từ cache
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
+        else:
+            # Determine which JSON file to use
+            json_path = get_video_metadata_path(video_name)
+            
+            # Lưu vào cache nếu extract_query_confidence có cache
+            if hasattr(extract_query_confidence, 'path_cache'):
+                if 'embeddings_path' not in extract_query_confidence.path_cache.get(path_cache_key, {}):
+                    # Nếu chưa có embeddings_path, cần lấy thêm
+                    embeddings_path = get_video_embeddings_path(video_name)
+                    extract_query_confidence.path_cache[path_cache_key] = {
+                        'embeddings_path': embeddings_path,
+                        'json_path': json_path
+                    }
+                else:
+                    # Nếu đã có embeddings_path, chỉ cập nhật json_path
+                    extract_query_confidence.path_cache[path_cache_key]['json_path'] = json_path
         
         # Đọc dữ liệu từ file JSON
         with open(json_path, "r", encoding="utf-8") as f:
@@ -727,8 +824,28 @@ def search_by_object(query, adaptive_threshold, top_k, video_name=None):
         video_name: Nếu có, chỉ tìm kiếm trong video này
     """
     try:
-        # Determine which JSON file to use
-        json_path = get_video_metadata_path(video_name)
+        # Kiểm tra xem có cache đường dẫn từ extract_query_confidence không
+        path_cache_key = f"paths_{video_name or 'default'}"
+        if (hasattr(extract_query_confidence, 'path_cache') and 
+            path_cache_key in extract_query_confidence.path_cache):
+            # Sử dụng đường dẫn từ cache
+            json_path = extract_query_confidence.path_cache[path_cache_key]['json_path']
+        else:
+            # Determine which JSON file to use
+            json_path = get_video_metadata_path(video_name)
+            
+            # Lưu vào cache nếu extract_query_confidence có cache
+            if hasattr(extract_query_confidence, 'path_cache'):
+                if 'embeddings_path' not in extract_query_confidence.path_cache.get(path_cache_key, {}):
+                    # Nếu chưa có embeddings_path, cần lấy thêm
+                    embeddings_path = get_video_embeddings_path(video_name)
+                    extract_query_confidence.path_cache[path_cache_key] = {
+                        'embeddings_path': embeddings_path,
+                        'json_path': json_path
+                    }
+                else:
+                    # Nếu đã có embeddings_path, chỉ cập nhật json_path
+                    extract_query_confidence.path_cache[path_cache_key]['json_path'] = json_path
         
         # Đọc dữ liệu từ file JSON
         with open(json_path, "r", encoding="utf-8") as f:
