@@ -1,11 +1,15 @@
 import React from 'react';
-import { Menu, Video, Upload, History, Settings, Search } from 'lucide-react';
+import { Menu, Video, Upload, History, Settings, Search, Zap } from 'lucide-react';
 import { useVideo } from '../context/VideoContext';
 import { VideoLibrary } from './VideoLibrary';
 
-export const Sidebar = () => {
+interface SidebarProps {
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+}
+
+export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
   const [expanded, setExpanded] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState('library');
   const { videos } = useVideo();
 
   return (
@@ -33,35 +37,42 @@ export const Sidebar = () => {
             label="Library"
             active={activeTab === 'library'}
             expanded={expanded}
-            onClick={() => setActiveTab('library')}
+            onClick={() => onTabChange('library')}
           />
           <SidebarButton
             icon={<Search size={20} />}
             label="Search"
             active={activeTab === 'search'}
             expanded={expanded}
-            onClick={() => setActiveTab('search')}
+            onClick={() => onTabChange('search')}
+          />
+          <SidebarButton
+            icon={<Zap size={20} />}
+            label="Visualization"
+            active={activeTab === 'visualization'}
+            expanded={expanded}
+            onClick={() => onTabChange('visualization')}
           />
           <SidebarButton
             icon={<Upload size={20} />}
             label="Upload"
             active={activeTab === 'upload'}
             expanded={expanded}
-            onClick={() => setActiveTab('upload')}
+            onClick={() => onTabChange('upload')}
           />
           <SidebarButton
             icon={<History size={20} />}
             label="History"
             active={activeTab === 'history'}
             expanded={expanded}
-            onClick={() => setActiveTab('history')}
+            onClick={() => onTabChange('history')}
           />
           <SidebarButton
             icon={<Settings size={20} />}
             label="Settings"
             active={activeTab === 'settings'}
             expanded={expanded}
-            onClick={() => setActiveTab('settings')}
+            onClick={() => onTabChange('settings')}
           />
         </nav>
 

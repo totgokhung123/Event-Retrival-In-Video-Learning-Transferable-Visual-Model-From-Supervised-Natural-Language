@@ -57,6 +57,10 @@ preprocess = service_container['preprocess']
 device = service_container['device']
 services_loaded = service_container['services_loaded']
 
+# Import and initialize visualization service
+from services.visualization_service import VisualizationService
+visualization_service = VisualizationService(path_service, embedding_service, data_service, cache_service)
+
 # For backwards compatibility, keep existing code
 video_data_mapping = path_service.video_data_mapping
 
@@ -791,6 +795,63 @@ def transcribe_voice():
         
     except Exception as e:
         print(f"Error in transcribe_voice: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/visualization/umap', methods=['POST'])
+def api_get_umap_visualization():
+    """API trực quan hóa UMAP cho dữ liệu embedding."""
+    try:
+        data = request.json
+        video_names = data.get('video_names')  # None = tất cả video
+        n_neighbors = data.get('n_neighbors', 15)
+        min_dist = data.get('min_dist', 0.1)
+        n_components = data.get('n_components', 2)
+        metric = data.get('metric', 'cosine')
+        
+        print(f"UMAP request with parameters: video_names={video_names}, n_neighbors={n_neighbors}, min_dist={min_dist}")
+        
+        # Sử dụng visualization_service
+        result = visualization_service.generate_umap_visualization(
+            video_names=video_names,
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            n_components=n_components,
+            metric=metric
+        )
+        
+        if result is None:
+            return jsonify({"error": "No embeddings found"}), 404
+        
+        print(f"UMAP generation successful with {len(result['coordinates'])} points")
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error generating UMAP visualization: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/videos/available', methods=['GET'])
+def api_get_available_videos():
+    """API lấy danh sách video có sẵn cho visualization."""
+    try:
+        # Lọc các video có sẵn embeddings
+        available_videos = []
+        for video_name, video_info in video_data_mapping.items():
+            if not video_name.startswith("default"):
+                embeddings_file = video_info.get('embeddings_file')
+                if embeddings_file and os.path.exists(embeddings_file):
+                    available_videos.append({
+                        "name": video_name,
+                        "embeddings_file": embeddings_file,
+                        "video_path": video_info.get('video_path', '')
+                    })
+        
+        return jsonify({
+            "available_videos": available_videos,
+            "count": len(available_videos)
+        })
+    except Exception as e:
+        print(f"Error getting available videos: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])

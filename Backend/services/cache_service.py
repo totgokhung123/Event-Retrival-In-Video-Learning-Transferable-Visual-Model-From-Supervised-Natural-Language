@@ -16,6 +16,7 @@ class CacheService:
         self.frames_list_cache = {}
         self.path_cache = {}
         self.search_results_cache = {}
+        self.umap_cache = {}  # Thêm cache cho UMAP visualization
         self.timestamp_cache = {}  # Lưu timestamp cho TTL
         self.default_ttl = default_ttl
     
@@ -172,6 +173,36 @@ class CacheService:
         cache_key = f"{query}_{video_name or 'default'}"
         self.search_results_cache[cache_key] = results
         self._set_timestamp(cache_key, ttl)
+        
+    def get_umap_result(self, cache_key):
+        """
+        Lấy kết quả UMAP từ cache
+        
+        Args:
+            cache_key: Cache key cho kết quả UMAP
+            
+        Returns:
+            Kết quả UMAP hoặc None
+        """
+        umap_cache_key = f"umap_{cache_key}"
+        # Kiểm tra TTL trước khi trả về
+        if self._is_cache_expired(umap_cache_key):
+            self._remove_entry(umap_cache_key, self.umap_cache)
+            return None
+        return self.umap_cache.get(umap_cache_key)
+
+    def set_umap_result(self, cache_key, result, ttl=None):
+        """
+        Lưu kết quả UMAP vào cache
+        
+        Args:
+            cache_key: Cache key cho kết quả UMAP
+            result: Kết quả UMAP
+            ttl: Thời gian sống cho cache entry (giây), mặc định sử dụng default_ttl
+        """
+        umap_cache_key = f"umap_{cache_key}"
+        self.umap_cache[umap_cache_key] = result
+        self._set_timestamp(umap_cache_key, ttl)
     
     # Phương thức xử lý TTL
     def _set_timestamp(self, key, ttl=None):
@@ -219,6 +250,7 @@ class CacheService:
         self.frames_list_cache.clear()
         self.path_cache.clear()
         self.search_results_cache.clear()
+        self.umap_cache.clear()  # Thêm xóa UMAP cache
         self.timestamp_cache.clear()
         
     def clear_cache_for_video(self, video_name):
@@ -239,7 +271,8 @@ class CacheService:
         # Xóa các cache khác có chứa video_name
         for cache_dict, cache_type in [
             (self.text_features_cache, "text_features"),
-            (self.search_results_cache, "search_results")
+            (self.search_results_cache, "search_results"),
+            (self.umap_cache, "umap")  # Thêm xóa UMAP cache cho video
         ]:
             keys_to_remove = [k for k in cache_dict.keys() if k.endswith(prefix)]
             for key in keys_to_remove:
@@ -298,7 +331,8 @@ class CacheService:
                     self.embeddings_cache, 
                     self.frames_list_cache, 
                     self.path_cache, 
-                    self.search_results_cache
+                    self.search_results_cache,
+                    self.umap_cache  # Thêm UMAP cache
                 ]:
                     if key in cache_dict:
                         del cache_dict[key]
