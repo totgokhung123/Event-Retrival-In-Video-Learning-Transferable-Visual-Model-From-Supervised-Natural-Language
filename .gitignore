@@ -5,6 +5,7 @@
 
 # Ignore thư viện underthesea đã clone
 underthesea/
+CLIP/
 
 # (Tuỳ chọn) ignore các file build/IDE/temp
 __pycache__/
