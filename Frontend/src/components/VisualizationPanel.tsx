@@ -219,6 +219,8 @@ export const VisualizationPanel = () => {
       const canvasY = padding + normalizedY * (canvas.height - padding * 2);
       
       // In the transformed coordinate system
+      // ctx.translate(offset.x, offset.y) and ctx.scale(scale, scale) have been applied
+      // So we need to divide by scale to counteract the scaling
       ctx.arc(canvasX / scale, canvasY / scale, pointRadius, 0, Math.PI * 2);
       
       // Helper function to check if a point is selected
@@ -415,6 +417,7 @@ export const VisualizationPanel = () => {
       const maxY = Math.max(selectionBox.start.y, selectionBox.end.y);
       
       console.log("Selection box dimensions:", { minX, maxX, minY, maxY });
+      console.log("Current view state:", { scale, offset });
       
       // Check if selection box is too small (might be a click)
       const isSmallSelection = 
@@ -422,6 +425,7 @@ export const VisualizationPanel = () => {
         Math.abs(selectionBox.end.y - selectionBox.start.y) < 5;
         
       if (isSmallSelection) {
+        console.log("Selection too small, treating as click");
         // Treat as a click - already handled by handleCanvasClick
         setIsSelecting(false);
         setSelectionBox(null);
@@ -451,19 +455,27 @@ export const VisualizationPanel = () => {
         const normalizedX = (point.x - xMin) / (xMax - xMin);
         const normalizedY = (point.y - yMin) / (yMax - yMin);
         
-        // Convert to canvas coordinates
+        // Convert to canvas coordinates (without scale/offset)
+        // This must match the exact calculation in drawVisualization
         const canvasX = padding + normalizedX * width;
         const canvasY = padding + normalizedY * height;
         
-        // Apply transformation to screen coordinates
+        // In drawVisualization, we draw at (canvasX/scale, canvasY/scale) after applying
+        // ctx.translate(offset.x, offset.y) and ctx.scale(scale, scale)
+        // 
+        // To calculate the final screen position:
+        // 1. The point position in the transformed coordinate system is (canvasX/scale, canvasY/scale)
+        // 2. After scaling by scale: ((canvasX/scale) * scale, (canvasY/scale) * scale) = (canvasX, canvasY)
+        // 3. After translating by offset: (canvasX + offset.x, canvasY + offset.y)
         return {
-          x: canvasX * scale + offset.x,
-          y: canvasY * scale + offset.y
+          x: canvasX + offset.x,
+          y: canvasY + offset.y
         };
       };
       
       // Check each point
-      console.log(`Checking ${points.length} points against selection box`);
+      console.log(`Checking ${points.length} points against selection box: ${minX},${minY} - ${maxX},${maxY}`);
+      console.log(`Current scale: ${scale}, offset: ${JSON.stringify(offset)}`);
       
       // Log a few points for debugging
       if (points.length > 0) {
@@ -479,6 +491,24 @@ export const VisualizationPanel = () => {
             screenPos.y <= maxY
           )
         });
+
+        // Log a few more sample points to understand the distribution
+        if (points.length > 100) {
+          [25, 50, 75].forEach(idx => {
+            const p = points[idx];
+            const pos = getScreenCoords(p);
+            console.log(`Point ${idx} position:`, {
+              raw: { x: p.x, y: p.y },
+              screen: pos,
+              inBox: (
+                pos.x >= minX && 
+                pos.x <= maxX && 
+                pos.y >= minY && 
+                pos.y <= maxY
+              )
+            });
+          });
+        }
       }
       
       for (const point of points) {
@@ -514,10 +544,32 @@ export const VisualizationPanel = () => {
         }
         
         console.log(`Setting ${newSelection.length} points with Ctrl key`);
+        // Log some details about the selected points
+        if (newSelection.length > 0) {
+          console.log("Selected points sample:", 
+            newSelection.slice(0, Math.min(3, newSelection.length)).map(p => ({
+              videoLabel: p.videoLabel,
+              frameIndex: p.frameIndex,
+              frameId: p.metadata.frame_id
+            }))
+          );
+        }
+        
         setSelectedPoints(newSelection);
       } else {
         // Replace selection
         console.log(`Setting ${selectedPointsInBox.length} points without Ctrl key`);
+        // Log some details about the selected points
+        if (selectedPointsInBox.length > 0) {
+          console.log("Selected points sample:", 
+            selectedPointsInBox.slice(0, Math.min(3, selectedPointsInBox.length)).map(p => ({
+              videoLabel: p.videoLabel,
+              frameIndex: p.frameIndex,
+              frameId: p.metadata.frame_id
+            }))
+          );
+        }
+        
         setSelectedPoints(selectedPointsInBox);
       }
     }
