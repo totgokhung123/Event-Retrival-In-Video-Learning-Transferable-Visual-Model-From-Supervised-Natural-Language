@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Loader2, Settings, RefreshCw, Download, Search, Zap } from 'lucide-react';
+import { Loader2, Settings, RefreshCw, Download, Search, Zap, ZoomIn, ZoomOut, Maximize, Move, X } from 'lucide-react';
 import { useVideo } from '../context/VideoContext';
 
 const API_URL = 'http://localhost:5000/api';
@@ -44,26 +44,41 @@ export const VisualizationPanel = () => {
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
   const [points, setPoints] = useState<UMAPPoint[]>([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [showInfo, setShowInfo] = useState<UMAPPoint | null>(null);
+  const [selectedPoints, setSelectedPoints] = useState<UMAPPoint[]>([]);
   const [uMapParams, setUMapParams] = useState<UMAPParameters>({
     n_neighbors: 15,
     min_dist: 0.1,
     metric: 'cosine'
   });
   
+  // Canvas view state
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [selectionBox, setSelectionBox] = useState<{
+    start: {x: number, y: number}, 
+    end: {x: number, y: number},
+    isCtrlKey?: boolean
+  } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [currentTool, setCurrentTool] = useState<'select' | 'pan'>('select');
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Fetch available videos on mount
   useEffect(() => {
     fetchAvailableVideos();
   }, []);
   
-  // Update canvas when points change
+  // Update canvas when points or view state changes
   useEffect(() => {
     if (points.length > 0) {
       drawVisualization();
     }
-  }, [points]);
+  }, [points, scale, offset, selectionBox, selectedPoints]);
   
   // Select current video when it changes
   useEffect(() => {
@@ -116,6 +131,8 @@ export const VisualizationPanel = () => {
       }));
       
       setPoints(processedPoints);
+      setSelectedPoints([]);
+      resetViewport();
     } catch (error) {
       console.error('Error generating UMAP:', error);
       setError('Failed to generate UMAP visualization');
@@ -124,6 +141,26 @@ export const VisualizationPanel = () => {
     }
   };
 
+  const resetViewport = () => {
+    // Base scale on number of points to avoid overcrowding for large datasets
+    const pointCount = points.length;
+    const autoScale = pointCount > 1000 ? 0.8 : pointCount > 500 ? 0.9 : 1;
+    setScale(autoScale);
+    setOffset({ x: 0, y: 0 });
+    
+    // Ensure canvas dimensions are properly set
+    if (canvasRef.current && containerRef.current) {
+      const container = containerRef.current;
+      canvasRef.current.width = container.clientWidth;
+      canvasRef.current.height = container.clientHeight;
+    }
+  };
+
+
+
+  // Add state variable to store normalized coordinates
+  const [normalizedCoords, setNormalizedCoords] = useState<{xMin: number, xMax: number, yMin: number, yMax: number} | null>(null);
+  
   const drawVisualization = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -133,8 +170,12 @@ export const VisualizationPanel = () => {
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1e293b'; // bg-slate-800
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Find min and max to normalize coordinates
+    if (points.length === 0) return;
+    
     const xValues = points.map(p => p.x);
     const yValues = points.map(p => p.y);
     const xMin = Math.min(...xValues);
@@ -142,10 +183,11 @@ export const VisualizationPanel = () => {
     const yMin = Math.min(...yValues);
     const yMax = Math.max(...yValues);
     
+    // Store normalized coordinates for selection logic
+    setNormalizedCoords({xMin, xMax, yMin, yMax});
+    
     // Add some padding
     const padding = 20;
-    const width = canvas.width - padding * 2;
-    const height = canvas.height - padding * 2;
     
     // Generate colors for different videos
     const uniqueVideos = [...new Set(points.map(p => p.videoLabel))];
@@ -157,17 +199,48 @@ export const VisualizationPanel = () => {
     );
     
     // Draw points
+    ctx.save();
+    ctx.translate(offset.x, offset.y);
+    ctx.scale(scale, scale);
+    
+    // Adjust point size based on canvas size and scale
+    const pointRadius = Math.max(2, Math.min(3, 3 / Math.sqrt(scale)));
+    
     points.forEach(point => {
-      // Normalize coordinates to fit canvas
-      const x = padding + ((point.x - xMin) / (xMax - xMin)) * width;
-      const y = padding + ((point.y - yMin) / (yMax - yMin)) * height;
-      
       // Draw point
       ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = colorMap[point.videoLabel] || '#888';
-      ctx.fill();
+      
+      // Calculate normalized position (0-1) in the data space
+      const normalizedX = (point.x - xMin) / (xMax - xMin);
+      const normalizedY = (point.y - yMin) / (yMax - yMin);
+      
+      // Convert to canvas coordinates (without scale/offset)
+      const canvasX = padding + normalizedX * (canvas.width - padding * 2);
+      const canvasY = padding + normalizedY * (canvas.height - padding * 2);
+      
+      // In the transformed coordinate system
+      ctx.arc(canvasX / scale, canvasY / scale, pointRadius, 0, Math.PI * 2);
+      
+      // Helper function to check if a point is selected
+      const isPointSelected = (p: UMAPPoint) => selectedPoints.some(
+        selected => selected.metadata.frame_id === p.metadata.frame_id && 
+                   selected.videoLabel === p.videoLabel
+      );
+      
+      // Highlight selected points
+      if (isPointSelected(point)) {
+        ctx.fillStyle = '#10b981'; // text-emerald-500
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = colorMap[point.videoLabel] || '#888';
+        ctx.fill();
+      }
     });
+    
+    ctx.restore();
     
     // Draw legend
     const legendX = 10;
@@ -186,47 +259,329 @@ export const VisualizationPanel = () => {
       
       legendY += 15;
     });
+    
+    // Draw selection box if active
+    if (selectionBox) {
+      ctx.strokeStyle = '#10b981'; // text-emerald-500
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      
+      const width = selectionBox.end.x - selectionBox.start.x;
+      const height = selectionBox.end.y - selectionBox.start.y;
+      
+      ctx.strokeRect(selectionBox.start.x, selectionBox.start.y, width, height);
+      ctx.setLineDash([]);
+      
+      // Semi-transparent fill
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.1)'; // text-emerald-500 with opacity
+      ctx.fillRect(selectionBox.start.x, selectionBox.start.y, width, height);
+    }
+    
+    // Draw tool indicators
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Tool: ${currentTool === 'select' ? 'Selection' : 'Pan'}`, 10, canvas.height - 10);
+    ctx.fillText(`Zoom: ${Math.round(scale * 100)}%`, 10, canvas.height - 30);
   };
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isSelecting || isDragging || currentTool === 'pan') return;
+    
     const canvas = canvasRef.current;
-    if (!canvas || points.length === 0) return;
+    if (!canvas || points.length === 0 || !normalizedCoords) return;
     
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     
-    // Find min and max to normalize coordinates
-    const xValues = points.map(p => p.x);
-    const yValues = points.map(p => p.y);
-    const xMin = Math.min(...xValues);
-    const xMax = Math.max(...xValues);
-    const yMin = Math.min(...yValues);
-    const yMax = Math.max(...yValues);
+    // Find the nearest point
+    let minDist = Infinity;
+    let nearestPoint: UMAPPoint | null = null;
     
-    // Add some padding
+    // Use the same normalized coordinates that we used for drawing
+    const { xMin, xMax, yMin, yMax } = normalizedCoords;
     const padding = 20;
     const width = canvas.width - padding * 2;
     const height = canvas.height - padding * 2;
     
-    // Find the nearest point
-    let minDist = Infinity;
-    let nearestPoint = null;
+    // Calculate mouse position in the transformed coordinate system
+    const mouseXTransformed = (x - offset.x) / scale;
+    const mouseYTransformed = (y - offset.y) / scale;
     
     points.forEach(point => {
-      // Convert UMAP coordinates to canvas coordinates
-      const px = padding + ((point.x - xMin) / (xMax - xMin)) * width;
-      const py = padding + ((point.y - yMin) / (yMax - yMin)) * height;
+      // Calculate normalized position (0-1) in the data space
+      const normalizedX = (point.x - xMin) / (xMax - xMin);
+      const normalizedY = (point.y - yMin) / (yMax - yMin);
       
-      // Calculate distance
-      const dist = Math.sqrt((x - px) ** 2 + (y - py) ** 2);
-      if (dist < minDist && dist < 10) {  // Only consider points within 10 pixels
+      // Convert to canvas coordinates (without scale/offset)
+      const canvasX = padding + normalizedX * width;
+      const canvasY = padding + normalizedY * height;
+      
+      // Calculate distance in the transformed space
+      const dist = Math.sqrt(
+        (mouseXTransformed - canvasX / scale) ** 2 + 
+        (mouseYTransformed - canvasY / scale) ** 2
+      );
+      
+      // Adjust selection radius based on scale - smaller radius when zoomed out
+      const selectionRadius = 10 / Math.sqrt(scale);
+      
+      if (dist < minDist && dist < selectionRadius) {
         minDist = dist;
         nearestPoint = point;
       }
     });
     
-    setShowInfo(nearestPoint);
+    // Helper function to check if two points are the same (by metadata.frame_id and videoLabel)
+    const isSamePoint = (p1: UMAPPoint, p2: UMAPPoint) => 
+      p1.metadata.frame_id === p2.metadata.frame_id && p1.videoLabel === p2.videoLabel;
+    
+    if (nearestPoint) {
+      // If holding Ctrl/Cmd key, add to selection or remove if already selected
+      if (event.ctrlKey || event.metaKey) {
+        // Check if point is already selected
+        const existingPointIndex = selectedPoints.findIndex(p => isSamePoint(p, nearestPoint!));
+        
+        if (existingPointIndex >= 0) {
+          // Remove the point if already selected
+          const newSelection = [...selectedPoints];
+          newSelection.splice(existingPointIndex, 1);
+          setSelectedPoints(newSelection);
+        } else {
+          // Add the point to selection
+          setSelectedPoints([...selectedPoints, nearestPoint]);
+        }
+      } else {
+        // Replace selection
+        setSelectedPoints([nearestPoint]);
+      }
+    } else if (!(event.ctrlKey || event.metaKey)) {
+      // Clear selection if clicking empty space without Ctrl/Cmd
+      setSelectedPoints([]);
+    }
+  };
+  
+  const handleCanvasMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (currentTool === 'select') {
+      // Start selection box
+      setIsSelecting(true);
+      setSelectionBox({
+        start: { x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY },
+        end: { x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY },
+        isCtrlKey: event.ctrlKey || event.metaKey
+      });
+    } else {
+      // Start panning
+      setIsDragging(true);
+      setDragStart({ x: event.clientX - offset.x, y: event.clientY - offset.y });
+    }
+  };
+  
+  const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isSelecting && selectionBox) {
+      // Update selection box, preserving isCtrlKey
+      const updatedSelectionBox = {
+        start: selectionBox.start,
+        end: { x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY },
+        isCtrlKey: selectionBox.isCtrlKey || event.ctrlKey || event.metaKey
+      };
+      
+      // Only update if there's a change
+      if (
+        updatedSelectionBox.end.x !== selectionBox.end.x || 
+        updatedSelectionBox.end.y !== selectionBox.end.y ||
+        updatedSelectionBox.isCtrlKey !== selectionBox.isCtrlKey
+      ) {
+        setSelectionBox(updatedSelectionBox);
+      }
+    } else if (isDragging) {
+      // Update offset for panning
+      setOffset({
+        x: event.clientX - dragStart.x,
+        y: event.clientY - dragStart.y
+      });
+    }
+  };
+  
+  const handleCanvasMouseUp = () => {
+    console.log("Mouse up event", { isSelecting, selectionBox, hasNormalizedCoords: !!normalizedCoords });
+    
+    if (isSelecting && selectionBox && normalizedCoords) {
+      // Find points within selection box
+      const minX = Math.min(selectionBox.start.x, selectionBox.end.x);
+      const maxX = Math.max(selectionBox.start.x, selectionBox.end.x);
+      const minY = Math.min(selectionBox.start.y, selectionBox.end.y);
+      const maxY = Math.max(selectionBox.start.y, selectionBox.end.y);
+      
+      console.log("Selection box dimensions:", { minX, maxX, minY, maxY });
+      
+      // Check if selection box is too small (might be a click)
+      const isSmallSelection = 
+        Math.abs(selectionBox.end.x - selectionBox.start.x) < 5 && 
+        Math.abs(selectionBox.end.y - selectionBox.start.y) < 5;
+        
+      if (isSmallSelection) {
+        // Treat as a click - already handled by handleCanvasClick
+        setIsSelecting(false);
+        setSelectionBox(null);
+        return;
+      }
+      
+      // Get canvas for coordinate calculations
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        setIsSelecting(false);
+        setSelectionBox(null);
+        return;
+      }
+      
+      // Simpler approach: check each point's screen position against selection box
+      const selectedPointsInBox = [];
+      
+      // Use the normalized coordinates from the current state
+      const { xMin, xMax, yMin, yMax } = normalizedCoords;
+      const padding = 20;
+      const width = canvas.width - padding * 2;
+      const height = canvas.height - padding * 2;
+      
+      // Helper function to get screen coordinates for a point
+      const getScreenCoords = (point: UMAPPoint) => {
+        // Calculate normalized position (0-1) in the data space
+        const normalizedX = (point.x - xMin) / (xMax - xMin);
+        const normalizedY = (point.y - yMin) / (yMax - yMin);
+        
+        // Convert to canvas coordinates
+        const canvasX = padding + normalizedX * width;
+        const canvasY = padding + normalizedY * height;
+        
+        // Apply transformation to screen coordinates
+        return {
+          x: canvasX * scale + offset.x,
+          y: canvasY * scale + offset.y
+        };
+      };
+      
+      // Check each point
+      console.log(`Checking ${points.length} points against selection box`);
+      
+      // Log a few points for debugging
+      if (points.length > 0) {
+        const samplePoint = points[0];
+        const screenPos = getScreenCoords(samplePoint);
+        console.log("Sample point screen position:", {
+          point: { x: samplePoint.x, y: samplePoint.y },
+          screen: screenPos,
+          inBox: (
+            screenPos.x >= minX && 
+            screenPos.x <= maxX && 
+            screenPos.y >= minY && 
+            screenPos.y <= maxY
+          )
+        });
+      }
+      
+      for (const point of points) {
+        const screenPos = getScreenCoords(point);
+        
+        if (
+          screenPos.x >= minX && 
+          screenPos.x <= maxX && 
+          screenPos.y >= minY && 
+          screenPos.y <= maxY
+        ) {
+          selectedPointsInBox.push(point);
+        }
+      }
+      
+      console.log(`Found ${selectedPointsInBox.length} points in selection box`);
+      
+      // Update selection based on Ctrl key state
+      if (selectionBox.isCtrlKey) {
+        // Add to existing selection, avoiding duplicates
+        const newSelection = [...selectedPoints];
+        
+        for (const point of selectedPointsInBox) {
+          // Check if point is already in selection
+          const alreadySelected = newSelection.some(
+            p => p.metadata.frame_id === point.metadata.frame_id && 
+                 p.videoLabel === point.videoLabel
+          );
+          
+          if (!alreadySelected) {
+            newSelection.push(point);
+          }
+        }
+        
+        console.log(`Setting ${newSelection.length} points with Ctrl key`);
+        setSelectedPoints(newSelection);
+      } else {
+        // Replace selection
+        console.log(`Setting ${selectedPointsInBox.length} points without Ctrl key`);
+        setSelectedPoints(selectedPointsInBox);
+      }
+    }
+    
+    // Clean up selection state
+    setIsSelecting(false);
+    setSelectionBox(null);
+    setIsDragging(false);
+  };
+  
+  const handleCanvasMouseLeave = () => {
+    setIsDragging(false);
+    setIsSelecting(false);
+  };
+
+  const handleWheel = (event: React.WheelEvent) => {
+    event.preventDefault();
+    
+    const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1; // Zoom out/in
+    const newScale = Math.max(0.1, Math.min(5, scale * zoomFactor));
+    
+    // Zoom centered at mouse position
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    const oldMousePosX = (mouseX - offset.x) / scale;
+    const oldMousePosY = (mouseY - offset.y) / scale;
+    
+    const newOffset = {
+      x: mouseX - oldMousePosX * newScale,
+      y: mouseY - oldMousePosY * newScale
+    };
+    
+    setScale(newScale);
+    setOffset(newOffset);
+  };
+
+  const handleZoomIn = () => {
+    const newScale = Math.min(5, scale * 1.2);
+    setScale(newScale);
+  };
+  
+  const handleZoomOut = () => {
+    const newScale = Math.max(0.1, scale * 0.8);
+    setScale(newScale);
+  };
+  
+  const handleResetZoom = () => {
+    resetViewport();
+  };
+  
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+    
+    // Allow the resize to take effect before recalculating
+    setTimeout(() => {
+      if (canvasRef.current && containerRef.current) {
+        const container = containerRef.current;
+        canvasRef.current.width = container.clientWidth;
+        canvasRef.current.height = container.clientHeight;
+        drawVisualization();
+      }
+    }, 100);
   };
 
   const handleToggleVideo = (videoName: string) => {
@@ -254,247 +609,392 @@ export const VisualizationPanel = () => {
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
+  
+  const toggleTool = () => {
+    setCurrentTool(currentTool === 'select' ? 'pan' : 'select');
+  };
+
+  // Make canvas responsive
+  useEffect(() => {
+    const updateCanvasSize = () => {
+      if (canvasRef.current && containerRef.current) {
+        const container = containerRef.current;
+        canvasRef.current.width = container.clientWidth;
+        canvasRef.current.height = container.clientHeight;
+        drawVisualization();
+      }
+    };
+    
+    window.addEventListener('resize', updateCanvasSize);
+    updateCanvasSize(); // Initial size
+    
+    return () => window.removeEventListener('resize', updateCanvasSize);
+  }, []);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 border-b border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-teal-500" />
-            <h2 className="text-lg font-medium">UMAP Visualization</h2>
-          </div>
+    <div 
+        className={`h-full flex ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-900' : ''}`}
+        role="application"
+        aria-label="UMAP Visualization Dashboard"
+      >
+        {/* Left panel: Selected Events */}
+        <section 
+          className={`${isFullscreen ? 'w-1/4' : 'w-1/3'} border-r border-slate-700 flex flex-col`}
+          aria-label="Selected Events Panel"
+        >
+          <header className="p-4 border-b border-slate-700">
+            <h2 className="text-lg font-medium flex items-center">
+              <Zap size={20} className="text-teal-500 mr-2" />
+              Selected Events ({selectedPoints.length})
+            </h2>
+          </header>
           
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
-              title="Settings"
-            >
-              <Settings size={16} />
-            </button>
-            <button
-              onClick={generateUMAP}
-              className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
-              title="Refresh"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <RefreshCw size={16} />
-              )}
-            </button>
-            <button
-              onClick={downloadVisualization}
-              className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
-              title="Download"
-              disabled={points.length === 0}
-            >
-              <Download size={16} />
-            </button>
+          <div className="flex-1 overflow-y-auto p-2">
+            {selectedPoints.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                <Search size={32} className="mb-2" />
+                <p>No events selected</p>
+                <p className="text-sm text-slate-600 mt-2">Click or drag to select points on the visualization</p>
+              </div>
+            ) : (
+              <ul className="space-y-4" role="list" aria-label="Selected events list">
+                {selectedPoints.map((point, index) => (
+                  <li 
+                    key={index} 
+                    className="p-3 bg-slate-800 rounded-lg border border-slate-700"
+                    role="listitem"
+                  >
+                    <div className="flex justify-between">
+                      <span className="font-medium">{point.videoLabel}</span>
+                      <span className="text-slate-400">Frame: {point.frameIndex}</span>
+                    </div>
+                    
+                    {point.metadata.text && (
+                      <div className="mt-1 text-sm">
+                        <span className="text-slate-400">Text:</span> {point.metadata.text}
+                      </div>
+                    )}
+                    
+                    {point.metadata.object && (
+                      <div className="mt-1 text-sm">
+                        <span className="text-slate-400">Object:</span> {point.metadata.object}
+                      </div>
+                    )}
+                    
+                    <div className="mt-2">
+                      <img
+                        src={point.metadata.filepath}
+                        alt={`Frame ${point.frameIndex} from ${point.videoLabel} showing ${point.metadata.object || point.metadata.text || 'video frame'}`}
+                        className="w-full h-auto rounded border border-slate-600"
+                        loading="lazy"
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
-
-        {showSettings && (
-          <div className="mb-4 p-4 bg-slate-800 border border-slate-700 rounded-lg">
-            <h3 className="font-medium mb-3">UMAP Settings</h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  n_neighbors: {uMapParams.n_neighbors}
-                </label>
-                <input
-                  type="range"
-                  min="2"
-                  max="100"
-                  value={uMapParams.n_neighbors}
-                  onChange={(e) =>
-                    setUMapParams({ ...uMapParams, n_neighbors: parseInt(e.target.value) })
-                  }
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  min_dist: {uMapParams.min_dist}
-                </label>
-                <input
-                  type="range"
-                  min="0.01"
-                  max="1"
-                  step="0.01"
-                  value={uMapParams.min_dist}
-                  onChange={(e) =>
-                    setUMapParams({ ...uMapParams, min_dist: parseFloat(e.target.value) })
-                  }
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
-                />
-              </div>
-              
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Metric</label>
-                <select
-                  value={uMapParams.metric}
-                  onChange={(e) =>
-                    setUMapParams({ ...uMapParams, metric: e.target.value })
-                  }
-                  className="w-full p-2 bg-slate-700 border border-slate-600 rounded text-sm"
-                >
-                  <option value="cosine">Cosine</option>
-                  <option value="euclidean">Euclidean</option>
-                  <option value="manhattan">Manhattan</option>
-                </select>
-              </div>
+        </section>
+        
+        {/* Right panel: UMAP Visualization */}
+        <section 
+          className={`${isFullscreen ? 'w-3/4' : 'w-2/3'} flex flex-col`}
+          aria-label="UMAP Visualization Panel"
+        >
+          <header className="p-4 border-b border-slate-700 flex flex-wrap gap-2 justify-between items-center">
+            <div className="flex items-center">
+              <h2 className="text-lg font-medium flex items-center">
+                <Zap size={20} className="text-teal-500 mr-2" />
+                UMAP Visualization
+              </h2>
             </div>
             
-            <div className="mt-4">
-              <div className="flex justify-between mb-2">
-                <h4 className="text-sm font-medium">Select Videos</h4>
+            <div className="flex items-center gap-2 flex-wrap" role="toolbar" aria-label="Visualization controls">
+              <div className="flex bg-slate-800 rounded-md" role="group" aria-label="Zoom and navigation controls">
+                <button
+                  onClick={handleZoomIn}
+                  className="p-2 text-slate-300 hover:bg-slate-700 rounded-l-md"
+                  title="Zoom In"
+                  aria-label="Zoom In"
+                >
+                  <ZoomIn size={16} />
+                </button>
+                
+                <button
+                  onClick={handleZoomOut}
+                  className="p-2 text-slate-300 hover:bg-slate-700"
+                  title="Zoom Out"
+                  aria-label="Zoom Out"
+                >
+                  <ZoomOut size={16} />
+                </button>
+                
+                <button
+                  onClick={handleResetZoom}
+                  className="p-2 text-slate-300 hover:bg-slate-700"
+                  title="Reset View"
+                  aria-label="Reset View"
+                >
+                  <RefreshCw size={16} />
+                </button>
+                
+                <button
+                  onClick={toggleTool}
+                  className={`p-2 text-slate-300 hover:bg-slate-700 ${currentTool === 'pan' ? 'bg-slate-600' : ''}`}
+                  title="Toggle Tool (Select/Pan)"
+                  aria-label={`Current tool: ${currentTool}. Click to switch to ${currentTool === 'select' ? 'Pan' : 'Select'} tool`}
+                  aria-pressed={currentTool === 'pan'}
+                >
+                  {currentTool === 'select' ? <Search size={16} /> : <Move size={16} />}
+                </button>
+                
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-2 text-slate-300 hover:bg-slate-700 rounded-r-md"
+                  title="Toggle Fullscreen"
+                  aria-label="Toggle Fullscreen"
+                  aria-pressed={isFullscreen}
+                >
+                  <Maximize size={16} />
+                </button>
+              </div>
+              
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
+                title="Settings"
+                aria-label="Settings"
+                aria-expanded={showSettings}
+              >
+                <Settings size={16} />
+              </button>
+              
+              <button
+                onClick={generateUMAP}
+                className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
+                title="Regenerate UMAP"
+                aria-label="Regenerate UMAP visualization"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={16} />
+                )}
+              </button>
+              
+              <button
+                onClick={downloadVisualization}
+                className="p-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700"
+                title="Download"
+                aria-label="Download visualization as image"
+                disabled={points.length === 0}
+              >
+                <Download size={16} />
+              </button>
+            </div>
+          </header>
+          
+          {showSettings && (
+            <div 
+              className="p-4 bg-slate-800 border-b border-slate-700" 
+              role="region" 
+              aria-label="Visualization Settings"
+            >
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-medium">UMAP Settings</h3>
                 <div className="flex gap-2">
                   <button
                     onClick={handleSelectAll}
-                    className="text-xs text-teal-400 hover:text-teal-300"
+                    className="text-xs px-2 py-1 bg-teal-600 text-white rounded hover:bg-teal-500"
                   >
-                    Select All
+                    Select All Videos
                   </button>
                   <button
                     onClick={handleDeselectAll}
-                    className="text-xs text-red-400 hover:text-red-300"
+                    className="text-xs px-2 py-1 bg-slate-600 text-white rounded hover:bg-slate-500"
                   >
                     Deselect All
                   </button>
                 </div>
               </div>
               
-              <div className="max-h-32 overflow-y-auto p-2 bg-slate-700 rounded border border-slate-600">
-                {availableVideos.length === 0 ? (
-                  <p className="text-sm text-slate-400">No videos available</p>
-                ) : (
-                  <div className="space-y-1">
-                    {availableVideos.map((video) => (
-                      <div
-                        key={video.name}
-                        className="flex items-center gap-2"
-                      >
-                        <input
-                          type="checkbox"
-                          id={`video-${video.name}`}
-                          checked={selectedVideos.includes(video.name)}
-                          onChange={() => handleToggleVideo(video.name)}
-                          className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        <label
-                          htmlFor={`video-${video.name}`}
-                          className="text-sm text-slate-300 cursor-pointer flex-1 truncate"
-                          title={video.name}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="n_neighbors" className="block text-sm font-medium mb-1">
+                    n_neighbors: {uMapParams.n_neighbors}
+                  </label>
+                  <input
+                    id="n_neighbors"
+                    type="range"
+                    min="2"
+                    max="100"
+                    value={uMapParams.n_neighbors}
+                    onChange={(e) =>
+                      setUMapParams({ ...uMapParams, n_neighbors: parseInt(e.target.value) })
+                    }
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
+                    aria-valuemin={2}
+                    aria-valuemax={100}
+                    aria-valuenow={uMapParams.n_neighbors}
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="min_dist" className="block text-sm font-medium mb-1">
+                    min_dist: {uMapParams.min_dist}
+                  </label>
+                  <input
+                    id="min_dist"
+                    type="range"
+                    min="0.01"
+                    max="1"
+                    step="0.01"
+                    value={uMapParams.min_dist}
+                    onChange={(e) =>
+                      setUMapParams({ ...uMapParams, min_dist: parseFloat(e.target.value) })
+                    }
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
+                    aria-valuemin={0.01}
+                    aria-valuemax={1}
+                    aria-valuenow={uMapParams.min_dist}
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="metric" className="block text-sm font-medium mb-1">Metric</label>
+                  <select
+                    id="metric"
+                    value={uMapParams.metric}
+                    onChange={(e) =>
+                      setUMapParams({ ...uMapParams, metric: e.target.value })
+                    }
+                    className="w-full p-2 bg-slate-700 border border-slate-600 rounded text-sm"
+                    aria-label="Select distance metric for UMAP"
+                  >
+                    <option value="cosine">Cosine</option>
+                    <option value="euclidean">Euclidean</option>
+                    <option value="manhattan">Manhattan</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="mt-4">
+                <h4 className="text-sm font-medium mb-2">Select Videos</h4>
+                <div className="max-h-32 overflow-y-auto p-2 bg-slate-700 rounded border border-slate-600">
+                  {availableVideos.length === 0 ? (
+                    <p className="text-sm text-slate-400">No videos available</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2" role="group" aria-label="Available videos">
+                      {availableVideos.map((video) => (
+                        <div
+                          key={video.name}
+                          className="flex items-center gap-2"
                         >
-                          {video.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                          <input
+                            type="checkbox"
+                            id={`video-${video.name}`}
+                            checked={selectedVideos.includes(video.name)}
+                            onChange={() => handleToggleVideo(video.name)}
+                            className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                            aria-label={`Select video: ${video.name}`}
+                          />
+                          <label
+                            htmlFor={`video-${video.name}`}
+                            className="text-sm text-slate-300 cursor-pointer truncate"
+                            title={video.name}
+                          >
+                            {video.name}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="p-3 bg-red-500/20 border border-red-500 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-      </div>
-
-      <div className="flex-1 relative overflow-hidden p-4">
-        {isLoading && (
-          <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center z-10">
-            <div className="flex flex-col items-center">
-              <Loader2 size={32} className="animate-spin text-teal-500 mb-2" />
-              <p className="text-teal-400 text-sm">Generating UMAP...</p>
-            </div>
-          </div>
-        )}
-
-        {points.length === 0 && !isLoading ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500">
-            <Search size={32} className="mb-2" />
-            <p>No visualization data</p>
-            <button
-              onClick={generateUMAP}
-              className="mt-4 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors"
-            >
-              Generate Visualization
-            </button>
-          </div>
-        ) : (
-          <canvas
-            ref={canvasRef}
-            onClick={handleCanvasClick}
-            width="800"
-            height="600"
-            className="w-full h-full bg-slate-800 border border-slate-700 rounded-lg cursor-crosshair"
-          />
-        )}
-      </div>
-
-      {showInfo && (
-        <div className="absolute bottom-4 right-4 p-4 bg-slate-800 border border-slate-700 rounded-lg shadow-lg max-w-md">
-          <div className="flex justify-between items-start">
-            <h3 className="font-medium">Point Details</h3>
-            <button
-              onClick={() => setShowInfo(null)}
-              className="text-slate-400 hover:text-slate-300"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          )}
           
-          <div className="mt-2 space-y-2">
-            <div className="flex gap-2">
-              <span className="text-slate-400">Video:</span>
-              <span>{showInfo.videoLabel}</span>
+          {error && (
+            <div 
+              className="p-3 mx-4 mt-4 bg-red-500/20 border border-red-500 rounded-lg text-sm" 
+              role="alert" 
+              aria-live="assertive"
+            >
+              {error}
             </div>
-            
-            <div className="flex gap-2">
-              <span className="text-slate-400">Frame:</span>
-              <span>{showInfo.frameIndex}</span>
-            </div>
-            
-            {showInfo.metadata.text && (
-              <div className="flex gap-2">
-                <span className="text-slate-400">Text:</span>
-                <span>{showInfo.metadata.text}</span>
+          )}
+
+          <div
+            ref={containerRef}
+            className="relative flex-1 overflow-hidden"
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {isLoading && (
+              <div 
+                className="absolute inset-0 bg-slate-900/70 flex items-center justify-center z-10" 
+                role="status" 
+                aria-live="polite"
+              >
+                <div className="flex flex-col items-center">
+                  <Loader2 size={32} className="animate-spin text-teal-500 mb-2" aria-hidden="true" />
+                  <p className="text-teal-400 text-sm">Generating UMAP...</p>
+                </div>
               </div>
             )}
-            
-            {showInfo.metadata.object && (
-              <div className="flex gap-2">
-                <span className="text-slate-400">Object:</span>
-                <span>{showInfo.metadata.object}</span>
+
+            {points.length === 0 && !isLoading ? (
+              <div 
+                className="h-full flex flex-col items-center justify-center text-slate-500" 
+                role="status" 
+                aria-live="polite"
+              >
+                <Search size={32} className="mb-2" aria-hidden="true" />
+                <p>No visualization data</p>
+                <button
+                  onClick={generateUMAP}
+                  className="mt-4 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors"
+                >
+                  Generate Visualization
+                </button>
               </div>
-            )}
-            
-            <div className="mt-2">
-              <img
-                src={showInfo.metadata.filepath}
-                alt="Frame"
-                className="max-h-32 rounded border border-slate-600"
+            ) : (
+              <canvas
+                ref={canvasRef}
+                className="w-full h-full cursor-crosshair"
+                onClick={handleCanvasClick}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={handleCanvasMouseLeave}
+                onWheel={handleWheel}
+                aria-label="UMAP visualization canvas"
+                role="img"
+                tabIndex={0}
               />
+            )}
+            
+            <div 
+              className="absolute bottom-4 left-4 bg-slate-800/80 p-2 rounded text-xs text-white" 
+              aria-live="polite"
+            >
+              <div>Tool: {currentTool === 'select' ? 'Selection' : 'Pan'}</div>
+              <div>Zoom: {Math.round(scale * 100)}%</div>
+              <div>Selected: {selectedPoints.length} points</div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        </section>
+        
+        {isFullscreen && (
+          <button
+            onClick={toggleFullscreen}
+            className="absolute top-4 right-4 p-2 bg-slate-800 rounded-full text-slate-300 hover:bg-slate-700"
+            title="Exit Fullscreen"
+            aria-label="Exit Fullscreen"
+          >
+            <X size={20} />
+          </button>
+        )}
+      </div>
   );
-};
-
-// Fix TypeScript error by declaring X component
-const X = ({ size }: { size: number }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
-  </svg>
-); 
+}; 
