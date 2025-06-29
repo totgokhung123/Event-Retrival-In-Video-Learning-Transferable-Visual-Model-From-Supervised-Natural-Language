@@ -172,7 +172,6 @@ class VisualizationService:
             for i, meta in enumerate(metadata):
                 # Lấy đường dẫn gốc từ metadata
                 original_filepath = meta.get('filepath', '')
-                
                 # Chuyển đổi đường dẫn tuyệt đối thành URL tương đối
                 api_filepath = original_filepath
                 if original_filepath and os.path.exists(original_filepath):

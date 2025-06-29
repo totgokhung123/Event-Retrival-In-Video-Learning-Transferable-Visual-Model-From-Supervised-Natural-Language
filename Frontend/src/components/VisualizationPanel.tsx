@@ -433,8 +433,8 @@ export const VisualizationPanel = () => {
       
       // Tăng threshold lên để xử lý selection nhỏ tốt hơn
       const isSmallSelection = 
-        Math.abs(currentX - selectionBox.start.x) < 10 && 
-        Math.abs(currentY - selectionBox.start.y) < 10;
+        Math.abs(currentX - selectionBox.start.x) < 20 && 
+        Math.abs(currentY - selectionBox.start.y) < 20;
         
       if (isSmallSelection) {
         console.log("Selection too small, treating as click");
@@ -673,7 +673,7 @@ export const VisualizationPanel = () => {
                         <div>
                           {/* Log để debug đường dẫn hình ảnh - sử dụng useEffect thay vì console.log trực tiếp */}
                           <img
-                            src={point.metadata.filepath}
+                            src={point.metadata.filepath.startsWith('/api') ? `http://localhost:5000${point.metadata.filepath}` : point.metadata.filepath}
                             alt={`Frame ${point.frameIndex} from ${point.videoLabel} showing ${point.metadata.object || point.metadata.text || 'video frame'}`}
                             className="w-full h-auto rounded border border-slate-600"
                             loading="lazy"
@@ -681,7 +681,13 @@ export const VisualizationPanel = () => {
                             onError={(e) => {
                               console.error("Failed to load image:", point.metadata.filepath);
                               console.error("Original filepath:", point.metadata.original_filepath);
-                              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Image+Not+Found';
+                              // Thử lại với đường dẫn gốc nếu có
+                              if (point.metadata.original_filepath && point.metadata.original_filepath !== point.metadata.filepath) {
+                                console.log("Trying with original filepath:", point.metadata.original_filepath);
+                                (e.target as HTMLImageElement).src = point.metadata.original_filepath;
+                              } else {
+                                (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Image+Not+Found';
+                              }
                             }}
                           />
                         </div>

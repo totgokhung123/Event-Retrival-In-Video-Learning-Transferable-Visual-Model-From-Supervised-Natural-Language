@@ -652,11 +652,15 @@ def api_serve_frame(frame_path):
     try:
         # Kiểm tra nếu là đường dẫn đầy đủ
         if os.path.exists(frame_path):
-            return send_file(frame_path, mimetype="image/jpeg")
+            response = send_file(frame_path, mimetype="image/jpeg")
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            return response
         
         # Kiểm tra trong frames mapping
         if frame_path in FRAMES_MAPPING:
-            return send_file(FRAMES_MAPPING[frame_path], mimetype="image/jpeg")
+            response = send_file(FRAMES_MAPPING[frame_path], mimetype="image/jpeg")
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            return response
             
         # Try to find in video-specific directories
         frame_name = os.path.basename(frame_path)
@@ -665,7 +669,9 @@ def api_serve_frame(frame_path):
             if frames_dir and os.path.exists(frames_dir):
                 potential_path = os.path.join(frames_dir, frame_name)
                 if os.path.exists(potential_path):
-                    return send_file(potential_path, mimetype="image/jpeg")
+                    response = send_file(potential_path, mimetype="image/jpeg")
+                    response.headers['Access-Control-Allow-Origin'] = '*'
+                    return response
         
         # Fallback: Thử tìm trong output_samples.json
         with open(get_default_metadata_path(), "r", encoding="utf-8") as f:
@@ -674,7 +680,9 @@ def api_serve_frame(frame_path):
         for frame_data in data:
             filepath = frame_data.get('filepath')
             if filepath and (os.path.basename(filepath) == frame_path or filepath == frame_path):
-                return send_file(filepath, mimetype="image/jpeg")
+                response = send_file(filepath, mimetype="image/jpeg")
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response
         
         abort(404, description=f"Frame {frame_path} not found")
     except Exception as e:
