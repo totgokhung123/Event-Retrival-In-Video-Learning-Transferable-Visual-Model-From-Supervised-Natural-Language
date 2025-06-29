@@ -21,6 +21,7 @@ interface FrameMetadata {
   video_name: string;
   frameidx: number;
   filepath: string;
+  original_filepath?: string; // Thêm trường này để lưu đường dẫn gốc
   frame_id: number;
   text?: string;
   text_confidence?: number;
@@ -68,6 +69,9 @@ export const VisualizationPanel = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Lưu trữ các thông số về không gian dữ liệu, không dùng state
+  const dataSpaceRef = useRef<{xMin: number, xMax: number, yMin: number, yMax: number} | null>(null);
+  
   // Fetch available videos on mount
   useEffect(() => {
     fetchAvailableVideos();
@@ -90,6 +94,25 @@ export const VisualizationPanel = () => {
       }
     }
   }, [currentVideo, availableVideos]);
+
+  // Helper function to convert từ tọa độ dữ liệu sang tọa độ màn hình
+  const toScreenCoords = (point: {x: number, y: number}, dataSpace: {xMin: number, xMax: number, yMin: number, yMax: number}, canvas: HTMLCanvasElement, padding: number = 20) => {
+    // Chuẩn hóa tọa độ trong không gian dữ liệu (0-1)
+    const normalizedX = (point.x - dataSpace.xMin) / (dataSpace.xMax - dataSpace.xMin);
+    const normalizedY = (point.y - dataSpace.yMin) / (dataSpace.yMax - dataSpace.yMin);
+    
+    // Chuyển sang tọa độ canvas
+    const width = canvas.width - padding * 2;
+    const height = canvas.height - padding * 2;
+    const canvasX = padding + normalizedX * width;
+    const canvasY = padding + normalizedY * height;
+    
+    // Áp dụng scale và offset
+    return {
+      x: offset.x + canvasX * scale,
+      y: offset.y + canvasY * scale
+    };
+  };
 
   const fetchAvailableVideos = async () => {
     try {
@@ -154,12 +177,12 @@ export const VisualizationPanel = () => {
       canvasRef.current.width = container.clientWidth;
       canvasRef.current.height = container.clientHeight;
     }
+    
+    // Reset selection
+    setSelectionBox(null);
+    setIsSelecting(false);
+    setIsDragging(false);
   };
-
-
-
-  // Add state variable to store normalized coordinates
-  const [normalizedCoords, setNormalizedCoords] = useState<{xMin: number, xMax: number, yMin: number, yMax: number} | null>(null);
   
   const drawVisualization = () => {
     const canvas = canvasRef.current;
@@ -183,8 +206,8 @@ export const VisualizationPanel = () => {
     const yMin = Math.min(...yValues);
     const yMax = Math.max(...yValues);
     
-    // Store normalized coordinates for selection logic
-    setNormalizedCoords({xMin, xMax, yMin, yMax});
+    // Cập nhật dataSpace ref - thay vì dùng state normalizedCoords
+    dataSpaceRef.current = { xMin, xMax, yMin, yMax };
     
     // Add some padding
     const padding = 20;
@@ -200,28 +223,22 @@ export const VisualizationPanel = () => {
     
     // Draw points
     ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(scale, scale);
     
     // Adjust point size based on canvas size and scale
     const pointRadius = Math.max(2, Math.min(3, 3 / Math.sqrt(scale)));
     
     points.forEach(point => {
+      // Sử dụng helper function thay vì tính toán trực tiếp
+      const { x: screenX, y: screenY } = toScreenCoords(
+        point,
+        { xMin, xMax, yMin, yMax },
+        canvas,
+        padding
+      );
+      
       // Draw point
       ctx.beginPath();
-      
-      // Calculate normalized position (0-1) in the data space
-      const normalizedX = (point.x - xMin) / (xMax - xMin);
-      const normalizedY = (point.y - yMin) / (yMax - yMin);
-      
-      // Convert to canvas coordinates (without scale/offset)
-      const canvasX = padding + normalizedX * (canvas.width - padding * 2);
-      const canvasY = padding + normalizedY * (canvas.height - padding * 2);
-      
-      // In the transformed coordinate system
-      // ctx.translate(offset.x, offset.y) and ctx.scale(scale, scale) have been applied
-      // So we need to divide by scale to counteract the scaling
-      ctx.arc(canvasX / scale, canvasY / scale, pointRadius, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, pointRadius, 0, Math.PI * 2);
       
       // Helper function to check if a point is selected
       const isPointSelected = (p: UMAPPoint) => selectedPoints.some(
@@ -291,39 +308,28 @@ export const VisualizationPanel = () => {
     if (isSelecting || isDragging || currentTool === 'pan') return;
     
     const canvas = canvasRef.current;
-    if (!canvas || points.length === 0 || !normalizedCoords) return;
+    if (!canvas || points.length === 0 || !dataSpaceRef.current) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
     
     // Find the nearest point
     let minDist = Infinity;
     let nearestPoint: UMAPPoint | null = null;
     
-    // Use the same normalized coordinates that we used for drawing
-    const { xMin, xMax, yMin, yMax } = normalizedCoords;
+    // Use the dataSpaceRef instead of normalizedCoords
+    const dataSpace = dataSpaceRef.current;
     const padding = 20;
-    const width = canvas.width - padding * 2;
-    const height = canvas.height - padding * 2;
-    
-    // Calculate mouse position in the transformed coordinate system
-    const mouseXTransformed = (x - offset.x) / scale;
-    const mouseYTransformed = (y - offset.y) / scale;
     
     points.forEach(point => {
-      // Calculate normalized position (0-1) in the data space
-      const normalizedX = (point.x - xMin) / (xMax - xMin);
-      const normalizedY = (point.y - yMin) / (yMax - yMin);
+      // Sử dụng helper function để tính tọa độ màn hình của điểm
+      const screenPos = toScreenCoords(point, dataSpace, canvas, padding);
       
-      // Convert to canvas coordinates (without scale/offset)
-      const canvasX = padding + normalizedX * width;
-      const canvasY = padding + normalizedY * height;
-      
-      // Calculate distance in the transformed space
+      // Calculate distance to mouse position
       const dist = Math.sqrt(
-        (mouseXTransformed - canvasX / scale) ** 2 + 
-        (mouseYTransformed - canvasY / scale) ** 2
+        (mouseX - screenPos.x) ** 2 + 
+        (mouseY - screenPos.y) ** 2
       );
       
       // Adjust selection radius based on scale - smaller radius when zoomed out
@@ -406,23 +412,29 @@ export const VisualizationPanel = () => {
     }
   };
   
-  const handleCanvasMouseUp = () => {
-    console.log("Mouse up event", { isSelecting, selectionBox, hasNormalizedCoords: !!normalizedCoords });
+  const handleCanvasMouseUp = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    // Lấy tọa độ trực tiếp từ event thay vì dùng selectionBox.end
+    const currentX = event.nativeEvent.offsetX;
+    const currentY = event.nativeEvent.offsetY;
     
-    if (isSelecting && selectionBox && normalizedCoords) {
-      // Find points within selection box
-      const minX = Math.min(selectionBox.start.x, selectionBox.end.x);
-      const maxX = Math.max(selectionBox.start.x, selectionBox.end.x);
-      const minY = Math.min(selectionBox.start.y, selectionBox.end.y);
-      const maxY = Math.max(selectionBox.start.y, selectionBox.end.y);
+    if (isSelecting && selectionBox) {
+      const canvas = canvasRef.current;
+      if (!canvas || !dataSpaceRef.current) {
+        setIsSelecting(false);
+        setSelectionBox(null);
+        return;
+      }
       
-      console.log("Selection box dimensions:", { minX, maxX, minY, maxY });
-      console.log("Current view state:", { scale, offset });
+      // Trực tiếp tính tọa độ selection box từ event và selectionBox.start
+      const minX = Math.min(selectionBox.start.x, currentX);
+      const maxX = Math.max(selectionBox.start.x, currentX);
+      const minY = Math.min(selectionBox.start.y, currentY);
+      const maxY = Math.max(selectionBox.start.y, currentY);
       
-      // Check if selection box is too small (might be a click)
+      // Tăng threshold lên để xử lý selection nhỏ tốt hơn
       const isSmallSelection = 
-        Math.abs(selectionBox.end.x - selectionBox.start.x) < 5 && 
-        Math.abs(selectionBox.end.y - selectionBox.start.y) < 5;
+        Math.abs(currentX - selectionBox.start.x) < 10 && 
+        Math.abs(currentY - selectionBox.start.y) < 10;
         
       if (isSmallSelection) {
         console.log("Selection too small, treating as click");
@@ -432,88 +444,19 @@ export const VisualizationPanel = () => {
         return;
       }
       
-      // Get canvas for coordinate calculations
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        setIsSelecting(false);
-        setSelectionBox(null);
-        return;
-      }
-      
-      // Simpler approach: check each point's screen position against selection box
-      const selectedPointsInBox = [];
-      
-      // Use the normalized coordinates from the current state
-      const { xMin, xMax, yMin, yMax } = normalizedCoords;
+      // Sử dụng dataSpaceRef thay vì state normalizedCoords
+      const dataSpace = dataSpaceRef.current;
       const padding = 20;
-      const width = canvas.width - padding * 2;
-      const height = canvas.height - padding * 2;
       
-      // Helper function to get screen coordinates for a point
-      const getScreenCoords = (point: UMAPPoint) => {
-        // Calculate normalized position (0-1) in the data space
-        const normalizedX = (point.x - xMin) / (xMax - xMin);
-        const normalizedY = (point.y - yMin) / (yMax - yMin);
-        
-        // Convert to canvas coordinates (without scale/offset)
-        // This must match the exact calculation in drawVisualization
-        const canvasX = padding + normalizedX * width;
-        const canvasY = padding + normalizedY * height;
-        
-        // In drawVisualization, we draw at (canvasX/scale, canvasY/scale) after applying
-        // ctx.translate(offset.x, offset.y) and ctx.scale(scale, scale)
-        // 
-        // To calculate the final screen position:
-        // 1. The point position in the transformed coordinate system is (canvasX/scale, canvasY/scale)
-        // 2. After scaling by scale: ((canvasX/scale) * scale, (canvasY/scale) * scale) = (canvasX, canvasY)
-        // 3. After translating by offset: (canvasX + offset.x, canvasY + offset.y)
-        return {
-          x: canvasX + offset.x,
-          y: canvasY + offset.y
-        };
-      };
+      // Tạo mảng lưu các điểm được chọn
+      const selectedPointsInBox: UMAPPoint[] = [];
       
-      // Check each point
-      console.log(`Checking ${points.length} points against selection box: ${minX},${minY} - ${maxX},${maxY}`);
-      console.log(`Current scale: ${scale}, offset: ${JSON.stringify(offset)}`);
-      
-      // Log a few points for debugging
-      if (points.length > 0) {
-        const samplePoint = points[0];
-        const screenPos = getScreenCoords(samplePoint);
-        console.log("Sample point screen position:", {
-          point: { x: samplePoint.x, y: samplePoint.y },
-          screen: screenPos,
-          inBox: (
-            screenPos.x >= minX && 
-            screenPos.x <= maxX && 
-            screenPos.y >= minY && 
-            screenPos.y <= maxY
-          )
-        });
-
-        // Log a few more sample points to understand the distribution
-        if (points.length > 100) {
-          [25, 50, 75].forEach(idx => {
-            const p = points[idx];
-            const pos = getScreenCoords(p);
-            console.log(`Point ${idx} position:`, {
-              raw: { x: p.x, y: p.y },
-              screen: pos,
-              inBox: (
-                pos.x >= minX && 
-                pos.x <= maxX && 
-                pos.y >= minY && 
-                pos.y <= maxY
-              )
-            });
-          });
-        }
-      }
-      
+      // Kiểm tra từng điểm xem có nằm trong selection box không
       for (const point of points) {
-        const screenPos = getScreenCoords(point);
+        // Sử dụng helper function để tính tọa độ màn hình
+        const screenPos = toScreenCoords(point, dataSpace, canvas, padding);
         
+        // Kiểm tra nếu điểm nằm trong selection box
         if (
           screenPos.x >= minX && 
           screenPos.x <= maxX && 
@@ -524,53 +467,45 @@ export const VisualizationPanel = () => {
         }
       }
       
-      console.log(`Found ${selectedPointsInBox.length} points in selection box`);
+      // Nếu không tìm thấy điểm nào, giữ nguyên trạng thái
+      if (selectedPointsInBox.length === 0) {
+        console.log("No points found in selection box");
+        setIsSelecting(false);
+        setSelectionBox(null);
+        return;
+      }
       
-      // Update selection based on Ctrl key state
-      if (selectionBox.isCtrlKey) {
-        // Add to existing selection, avoiding duplicates
+      // Loại bỏ các điểm trùng lặp dựa trên frame_id và videoLabel
+      const uniquePointsMap = new Map<string, UMAPPoint>();
+      
+      for (const point of selectedPointsInBox) {
+        const pointKey = `${point.videoLabel}-${point.metadata.frame_id}`;
+        if (!uniquePointsMap.has(pointKey)) {
+          uniquePointsMap.set(pointKey, point);
+        }
+      }
+      
+      // Chuyển đổi map thành mảng
+      const uniqueSelectedPoints = Array.from(uniquePointsMap.values());
+      
+      // Cập nhật selection dựa trên trạng thái phím Ctrl
+      const isCtrlKey = selectionBox.isCtrlKey || event.ctrlKey || event.metaKey;
+      if (isCtrlKey) {
+        // Thêm vào selection hiện tại, tránh trùng lặp
         const newSelection = [...selectedPoints];
+        const existingKeys = new Set(newSelection.map(p => `${p.videoLabel}-${p.metadata.frame_id}`));
         
-        for (const point of selectedPointsInBox) {
-          // Check if point is already in selection
-          const alreadySelected = newSelection.some(
-            p => p.metadata.frame_id === point.metadata.frame_id && 
-                 p.videoLabel === point.videoLabel
-          );
-          
-          if (!alreadySelected) {
+        for (const point of uniqueSelectedPoints) {
+          const pointKey = `${point.videoLabel}-${point.metadata.frame_id}`;
+          if (!existingKeys.has(pointKey)) {
             newSelection.push(point);
           }
         }
         
-        console.log(`Setting ${newSelection.length} points with Ctrl key`);
-        // Log some details about the selected points
-        if (newSelection.length > 0) {
-          console.log("Selected points sample:", 
-            newSelection.slice(0, Math.min(3, newSelection.length)).map(p => ({
-              videoLabel: p.videoLabel,
-              frameIndex: p.frameIndex,
-              frameId: p.metadata.frame_id
-            }))
-          );
-        }
-        
         setSelectedPoints(newSelection);
       } else {
-        // Replace selection
-        console.log(`Setting ${selectedPointsInBox.length} points without Ctrl key`);
-        // Log some details about the selected points
-        if (selectedPointsInBox.length > 0) {
-          console.log("Selected points sample:", 
-            selectedPointsInBox.slice(0, Math.min(3, selectedPointsInBox.length)).map(p => ({
-              videoLabel: p.videoLabel,
-              frameIndex: p.frameIndex,
-              frameId: p.metadata.frame_id
-            }))
-          );
-        }
-        
-        setSelectedPoints(selectedPointsInBox);
+        // Thay thế selection
+        setSelectedPoints(uniqueSelectedPoints);
       }
     }
     
@@ -734,12 +669,27 @@ export const VisualizationPanel = () => {
                     )}
                     
                     <div className="mt-2">
-                      <img
-                        src={point.metadata.filepath}
-                        alt={`Frame ${point.frameIndex} from ${point.videoLabel} showing ${point.metadata.object || point.metadata.text || 'video frame'}`}
-                        className="w-full h-auto rounded border border-slate-600"
-                        loading="lazy"
-                      />
+                      {point.metadata.filepath && point.metadata.filepath.trim() !== '' ? (
+                        <div>
+                          {/* Log để debug đường dẫn hình ảnh - sử dụng useEffect thay vì console.log trực tiếp */}
+                          <img
+                            src={point.metadata.filepath}
+                            alt={`Frame ${point.frameIndex} from ${point.videoLabel} showing ${point.metadata.object || point.metadata.text || 'video frame'}`}
+                            className="w-full h-auto rounded border border-slate-600"
+                            loading="lazy"
+                            onLoad={() => console.log("Image loaded successfully:", point.metadata.filepath)}
+                            onError={(e) => {
+                              console.error("Failed to load image:", point.metadata.filepath);
+                              console.error("Original filepath:", point.metadata.original_filepath);
+                              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Image+Not+Found';
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-full h-48 flex items-center justify-center bg-slate-700 rounded border border-slate-600">
+                          <p className="text-slate-400">No image available</p>
+                        </div>
+                      )}
                     </div>
                   </li>
                 ))}

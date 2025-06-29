@@ -170,10 +170,22 @@ class VisualizationService:
             # Xử lý metadata để trích xuất thông tin quan trọng
             simplified_metadata = []
             for i, meta in enumerate(metadata):
+                # Lấy đường dẫn gốc từ metadata
+                original_filepath = meta.get('filepath', '')
+                
+                # Chuyển đổi đường dẫn tuyệt đối thành URL tương đối
+                api_filepath = original_filepath
+                if original_filepath and os.path.exists(original_filepath):
+                    # Lấy tên file từ đường dẫn đầy đủ
+                    frame_filename = os.path.basename(original_filepath)
+                    # Tạo URL API để truy cập file
+                    api_filepath = f"/api/frame/{frame_filename}"
+                
                 frame_info = {
                     'video_name': meta.get('video_name', 'unknown'),
                     'frameidx': meta.get('frameidx', i),
-                    'filepath': meta.get('filepath', ''),
+                    'filepath': api_filepath,  # Sử dụng URL API thay vì đường dẫn tuyệt đối
+                    'original_filepath': original_filepath,  # Giữ lại đường dẫn gốc để tham khảo
                     'frame_id': i,
                 }
                 
