@@ -65,6 +65,7 @@ export const VisualizationPanel = () => {
   } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [currentTool, setCurrentTool] = useState<'select' | 'pan'>('select');
+   
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
