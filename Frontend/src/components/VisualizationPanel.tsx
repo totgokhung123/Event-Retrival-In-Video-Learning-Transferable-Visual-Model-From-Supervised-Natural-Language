@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Loader2, Settings, RefreshCw, Download, Search, Zap, ZoomIn, ZoomOut, Maximize, Move, X } from 'lucide-react';
 import { useVideo } from '../context/VideoContext';
@@ -601,6 +601,34 @@ export const VisualizationPanel = () => {
     setCurrentTool(currentTool === 'select' ? 'pan' : 'select');
   };
 
+  // Handle keyboard shortcuts
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Ignore events when user is typing in input fields
+    if (e.target instanceof HTMLInputElement || 
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement) {
+      return;
+    }
+    
+    // Ctrl+Q to toggle between select and pan tools
+    if (e.ctrlKey && e.key === 'q') {
+      e.preventDefault();
+      setCurrentTool(currentTool === 'select' ? 'pan' : 'select');
+    }
+    
+    // Ctrl+R to reset view
+    if (e.ctrlKey && e.key === 'r') {
+      e.preventDefault();
+      resetViewport();
+    }
+  }, [currentTool]);
+
+  // Set up keyboard shortcuts
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   // Make canvas responsive
   useEffect(() => {
     const updateCanvasSize = () => {
@@ -740,8 +768,8 @@ export const VisualizationPanel = () => {
                 <button
                   onClick={handleResetZoom}
                   className="p-2 text-slate-300 hover:bg-slate-700"
-                  title="Reset View"
-                  aria-label="Reset View"
+                  title="Reset View - Ctrl+R"
+                  aria-label="Reset View (Ctrl+R)"
                 >
                   <RefreshCw size={16} />
                 </button>
@@ -749,8 +777,8 @@ export const VisualizationPanel = () => {
                 <button
                   onClick={toggleTool}
                   className={`p-2 text-slate-300 hover:bg-slate-700 ${currentTool === 'pan' ? 'bg-slate-600' : ''}`}
-                  title="Toggle Tool (Select/Pan)"
-                  aria-label={`Current tool: ${currentTool}. Click to switch to ${currentTool === 'select' ? 'Pan' : 'Select'} tool`}
+                  title="Toggle Tool (Select/Pan) - Ctrl+Q"
+                  aria-label={`Current tool: ${currentTool}. Click to switch to ${currentTool === 'select' ? 'Pan' : 'Select'} tool (Ctrl+Q)`}
                   aria-pressed={currentTool === 'pan'}
                 >
                   {currentTool === 'select' ? <Search size={16} /> : <Move size={16} />}
@@ -986,9 +1014,10 @@ export const VisualizationPanel = () => {
               className="absolute bottom-4 left-4 bg-slate-800/80 p-2 rounded text-xs text-white" 
               aria-live="polite"
             >
-              <div>Tool: {currentTool === 'select' ? 'Selection' : 'Pan'}</div>
+              <div>Tool: {currentTool === 'select' ? 'Selection' : 'Pan'} (Ctrl+Q)</div>
               <div>Zoom: {Math.round(scale * 100)}%</div>
               <div>Selected: {selectedPoints.length} points</div>
+              <div className="text-slate-400 mt-1">Phím tắt: Ctrl+Q - đổi công cụ, Ctrl+R - khôi phục</div>
             </div>
           </div>
         </section>
