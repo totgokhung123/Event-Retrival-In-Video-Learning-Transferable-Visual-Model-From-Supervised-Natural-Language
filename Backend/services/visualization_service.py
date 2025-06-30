@@ -98,6 +98,7 @@ class VisualizationService:
                     # Cắt metadata để phù hợp với embeddings
                     metadata = metadata[:embeddings_count]
                     
+                    
                 # Thêm vào mảng tổng hợp
                 combined_embeddings.append(embeddings)
                 
