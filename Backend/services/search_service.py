@@ -158,6 +158,8 @@ class SearchService:
                             frame_data_copy['clip_similarity'] = confidence
                             
                             event = self.data_service.format_event_for_frontend(frame_data_copy)
+                            # Đảm bảo clip_similarity được đặt đúng
+                            event["clip_similarity"] = confidence
                             semantic_results.append(event)
                 except Exception as e:
                     print(f"Error processing frame {frame_name}: {e}")
@@ -165,8 +167,8 @@ class SearchService:
             # Debug info
             print(f"Found {len(semantic_results)} results after applying threshold {adaptive_threshold}")
             
-            # Sort results by confidence
-            semantic_results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            # Sort results by clip_similarity
+            semantic_results.sort(key=lambda x: x.get("clip_similarity", 0), reverse=True)
             
             # Return top_k results
             return semantic_results[:top_k]
@@ -598,4 +600,107 @@ class SearchService:
             return results[:top_k]
         except Exception as e:
             print(f"Error in text, object and keyword query: {e}")
+            return []
+    
+    def sort_by_confidence(self, results):
+        """Sắp xếp kết quả theo độ tin cậy."""
+        if not results:
+            return []
+        return sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
+        
+    def search_by_image(self, image_url, adaptive_threshold, top_k, video_name=None, preprocess=None):
+        """
+        Tìm kiếm bằng hình ảnh.
+        
+        Args:
+            image_url: URL hoặc đường dẫn đến hình ảnh
+            adaptive_threshold: Ngưỡng độ tin cậy
+            top_k: Số kết quả trả về tối đa
+            video_name: Nếu có, chỉ tìm kiếm trong video này
+            preprocess: Hàm tiền xử lý hình ảnh (từ embedding_service)
+            
+        Returns:
+            Danh sách events
+        """
+        try:
+            # Import required modules
+            import requests
+            from PIL import Image
+            from io import BytesIO
+            import torch
+            
+            # Tải hình ảnh từ URL hoặc file
+            if image_url.startswith(('http://', 'https://')):
+                # Tải từ URL
+                response = requests.get(image_url)
+                img = Image.open(BytesIO(response.content)).convert('RGB')
+            elif image_url.startswith('data:image'):
+                # Xử lý base64 encoded image
+                encoded_data = image_url.split(',')[1]
+                img = Image.open(BytesIO(bytes(encoded_data, 'utf-8'))).convert('RGB')
+            else:
+                # Tải từ đường dẫn cục bộ
+                img = Image.open(image_url).convert('RGB')
+                
+            # Sử dụng preprocess từ embedding_service thay vì trực tiếp từ biến preprocess
+            if preprocess is None:
+                preprocess = self.embedding_service.preprocess
+                
+            # Tiền xử lý hình ảnh
+            image = preprocess(img).unsqueeze(0).to(self.embedding_service.device)
+            
+            # Trích xuất features
+            with torch.no_grad():
+                if self.embedding_service.get_active_model_name() == "finetuned" and self.embedding_service.finetuned_model is not None:
+                    image_features = self.embedding_service.finetuned_model(image)
+                else:
+                    image_features = self.embedding_service.original_model.encode_image(image)
+                    
+                # Chuẩn hóa
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                image_features = image_features.cpu().numpy()
+                
+            # Tìm kiếm frame tương tự
+            similar_frames = self.embedding_service.search_top_frames_by_image(image_features, top_k * 3, video_name)
+            
+            # Lọc theo adaptive threshold
+            results = []
+            
+            # Get JSON data
+            data = self.data_service.load_json_data(video_name)
+            
+            for frame_name in similar_frames:
+                try:
+                    frame_idx = int(Path(frame_name).stem)
+                    frame_data = next((item for item in data if item.get('frameidx') == frame_idx), None)
+                    
+                    if frame_data:
+                        # Tính similarity với hình ảnh query
+                        frame_embedding = self.embedding_service.extract_image_embedding(frame_name)
+                        if frame_embedding is not None:
+                            similarity = np.dot(frame_embedding, image_features.T)[0][0]
+                            
+                            if similarity >= adaptive_threshold:
+                                # Tạo bản sao của frame_data
+                                frame_data_copy = frame_data.copy()
+                                frame_data_copy['clip_similarity'] = float(similarity)
+                                
+                                # Format event cho frontend
+                                event = self.data_service.format_event_for_frontend(frame_data_copy)
+                                # Đảm bảo confidence và clip_similarity được đặt đúng
+                                event["clip_similarity"] = float(similarity)
+                                event["confidence"] = float(similarity)
+                                results.append(event)
+                except Exception as e:
+                    print(f"Error processing frame {frame_name}: {e}")
+            
+            # Sắp xếp kết quả theo clip_similarity
+            results.sort(key=lambda x: x.get("clip_similarity", 0), reverse=True)
+            
+            # Trả về top_k kết quả
+            return results[:top_k]
+        except Exception as e:
+            print(f"Error in image search: {e}")
+            import traceback
+            traceback.print_exc()
             return [] 

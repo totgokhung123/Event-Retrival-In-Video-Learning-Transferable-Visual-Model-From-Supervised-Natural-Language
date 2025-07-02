@@ -1,10 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Image, Mic, Upload, Sparkles, ChevronDown, ChevronUp, Settings, Zap, Eye, Volume2, StopCircle, Globe } from 'lucide-react';
+import { Search, Image, Mic, Upload, Sparkles, ChevronDown, ChevronUp, Settings, Zap, Eye, Volume2, StopCircle, Globe, Cpu } from 'lucide-react';
 import { useVideo } from '../context/VideoContext';
 import axios from 'axios';
 import { EventData } from '../types';
 
 const API_URL = 'http://localhost:5000/api';
+
+// Định nghĩa interface cho Model
+interface Model {
+  id: string;
+  name: string;
+  description: string;
+}
 
 export const AdvancedSearchPanel = () => {
   const { currentVideo, setEvents, activeSearchFilters, updateActiveSearchFilters } = useVideo();
@@ -23,6 +30,11 @@ export const AdvancedSearchPanel = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState<'vi' | 'en_us'>('en_us');
   
+  // Model selection states
+  const [models, setModels] = useState<Model[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('original');
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  
   // Refs for audio recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -39,6 +51,47 @@ export const AdvancedSearchPanel = () => {
     enableClipSimilarity: activeSearchFilters.enableClipSimilarity || false,
     minSimilarity: activeSearchFilters.minSimilarity || 0.0,
   });
+  
+  // Fetch available models when component mounts
+  useEffect(() => {
+    const fetchModels = async () => {
+      setIsLoadingModels(true);
+      try {
+        const response = await axios.get(`${API_URL}/models`);
+        if (response.data && Array.isArray(response.data)) {
+          setModels(response.data);
+        }
+        
+        // Also get the currently active model
+        const activeModelResponse = await axios.get(`${API_URL}/models/active`);
+        if (activeModelResponse.data && activeModelResponse.data.active_model) {
+          setSelectedModel(activeModelResponse.data.active_model);
+        }
+      } catch (error) {
+        console.error('Error fetching models:', error);
+        // Fallback to default model
+        setModels([{
+          id: 'original',
+          name: 'CLIP Original (ViT-B/32)',
+          description: 'Mô hình CLIP gốc từ OpenAI'
+        }]);
+      } finally {
+        setIsLoadingModels(false);
+      }
+    };
+    
+    fetchModels();
+  }, []);
+  
+  // Handle model change
+  const handleModelChange = async (modelId: string) => {
+    setSelectedModel(modelId);
+    try {
+      await axios.post(`${API_URL}/models/active`, { model: modelId });
+    } catch (error) {
+      console.error('Error setting active model:', error);
+    }
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -237,7 +290,7 @@ export const AdvancedSearchPanel = () => {
     return 'text_clip';
   };
 
-  // Modify handleSearch to incorporate voice search
+  // Modify handleSearch to incorporate model selection
   const handleSearch = async () => {
     // If we're in voice mode and have recorded audio but haven't transcribed it yet
     if (searchType === 'voice' && recordedAudio && !transcribedText) {
@@ -286,6 +339,7 @@ export const AdvancedSearchPanel = () => {
       // Build search parameters based on search type and filters
       const searchParams: Record<string, unknown> = {
         top_k: 20, // Default number of results
+        model: selectedModel // Add selected model to search params
       };
       
       // Thêm videoId nếu có currentVideo, giúp tìm kiếm chỉ trong video hiện tại
@@ -297,6 +351,7 @@ export const AdvancedSearchPanel = () => {
       // Set specific confidence thresholds based on search method
       const searchMethod = determineSearchMethod();
       console.log("Selected search method:", searchMethod);
+      console.log("Using model:", selectedModel);
       
       // Luôn thiết lập cả 3 threshold để đảm bảo backend trả về đầy đủ thông tin confidence
       searchParams.adaptive_threshold = filters.minSimilarity; // CLIP similarity threshold
@@ -443,6 +498,46 @@ export const AdvancedSearchPanel = () => {
           </h2>
         </div>
 
+        {/* Model Selection */}
+        <div className="mb-4">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500/20 to-blue-500/20 flex items-center justify-center">
+              <Cpu size={12} className="text-indigo-400" />
+            </div>
+            <label className="text-sm font-medium text-slate-300">Select CLIP Model</label>
+          </div>
+          
+          <div className="relative group">
+            <select
+              value={selectedModel}
+              onChange={(e) => handleModelChange(e.target.value)}
+              className="w-full p-3 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-xl text-sm appearance-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all duration-300"
+              disabled={isLoadingModels || isSearching}
+            >
+              {isLoadingModels ? (
+                <option value="">Loading models...</option>
+              ) : (
+                models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+              <ChevronDown size={16} className="text-slate-400" />
+            </div>
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+          </div>
+          
+          {selectedModel === 'finetuned' && (
+            <p className="mt-1 text-xs text-indigo-300 flex items-center gap-2">
+              <Zap size={12} className="text-indigo-400" />
+              Using fine-tuned model optimized for sensitive content detection
+            </p>
+          )}
+        </div>
+        
         {/* Search Type Tabs */}
         <div className="flex gap-1 mb-4 bg-slate-700/50 backdrop-blur-sm rounded-xl p-1 border border-slate-600/30">
           <button

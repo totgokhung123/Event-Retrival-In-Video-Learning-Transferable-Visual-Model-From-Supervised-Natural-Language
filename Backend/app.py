@@ -38,13 +38,18 @@ from services import initialize_services
 BASE_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\static\\processed_frames"
 METADATA_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\metadata"
 EMBEDDING_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\embedding"
+MODEL_DIR = "E:\\Đồ án tôt nghiệp\\source_code\\Backend\\models"
 
 # Create necessary directories if they don't exist
 os.makedirs(METADATA_DIR, exist_ok=True)
 os.makedirs(EMBEDDING_DIR, exist_ok=True)
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+# Define path to finetuned model
+FINETUNED_MODEL_PATH = os.path.join(MODEL_DIR, "final_checkpoint.pt")
 
 # Initialize all services
-service_container = initialize_services(BASE_DIR, METADATA_DIR, EMBEDDING_DIR)
+service_container = initialize_services(BASE_DIR, METADATA_DIR, EMBEDDING_DIR, FINETUNED_MODEL_PATH)
 
 # Extract services from container
 path_service = service_container['path_service']
@@ -52,10 +57,13 @@ cache_service = service_container['cache_service']
 data_service = service_container['data_service']
 embedding_service = service_container['embedding_service']
 search_service = service_container['search_service']
-model = service_container['model']
-preprocess = service_container['preprocess']
 device = service_container['device']
 services_loaded = service_container['services_loaded']
+
+# Access model and preprocess from embedding_service instead of direct access
+# (these are now managed by embedding_service)
+# model = service_container['model']
+# preprocess = service_container['preprocess']
 
 # Import and initialize visualization service
 from services.visualization_service import VisualizationService
@@ -160,7 +168,7 @@ def search_by_image(image_url, adaptive_threshold, top_k, video_name=None):
     """
     Tìm kiếm bằng hình ảnh.
     """
-    return search_service.search_by_image(image_url, adaptive_threshold, top_k, video_name, preprocess)
+    return search_service.search_by_image(image_url, adaptive_threshold, top_k, video_name, embedding_service.preprocess)
 
 def search_semantic_with_clip(query, adaptive_threshold, top_k, video_name=None):
     """
@@ -379,6 +387,14 @@ def api_search():
         video_id = data.get("videoId")
         video_name = None
         
+        # Nhận model name từ frontend (default là 'original')
+        model_name = data.get("model", "original")
+        
+        # Đặt mô hình CLIP active
+        if model_name != embedding_service.get_active_model_name():
+            embedding_service.set_active_model(model_name)
+            print(f"Đã chuyển sang sử dụng mô hình CLIP: {model_name}")
+        
         if video_id and video_id.startswith('video-'):
             video_num = int(video_id.split('-')[1])
             all_videos = list(video_data_mapping.keys())
@@ -555,8 +571,15 @@ def api_search():
                 results = filtered_results
                 print(f"After filtering for video '{video_name}': {len(results)} results")
         
-        # Sắp xếp kết quả theo confidence
-        results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
+        # Sắp xếp kết quả dựa vào loại tìm kiếm
+        if search_type == "image" or search_method in ["text_clip", "text_adaptive"] or enable_clip_similarity:
+            # Đối với tìm kiếm bằng hình ảnh hoặc CLIP, sắp xếp theo clip_similarity
+            print("Sorting results by clip_similarity")
+            results = sorted(results, key=lambda x: x.get("clip_similarity", 0), reverse=True)
+        else:
+            # Đối với các loại tìm kiếm khác, sắp xếp theo confidence tổng hợp
+            print("Sorting results by overall confidence")
+            results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
         
         search_time = time.time() - start_time
         print(f"""
@@ -598,9 +621,11 @@ def api_upload_video():
         # Xử lý video
         extract_frames_from_video(path_save_video, frame_dir, threshold=30.0)
         
+        # Get model choice from request
+        model_name = request.form.get("model", "original")
+        
         # Trích xuất embedding (now saves to video-specific file)
-        model_name = "ViT-B/32"
-        embeddings_file = extract_and_save_embeddings_from_folder(frame_dir, model_name, video_name)
+        embeddings_file = embedding_service.extract_and_save_embeddings_from_folder(frame_dir, model_name, video_name)
         
         # Xử lý metadata (now saves to video-specific file)
         metadata_file = process_images_in_folder(frame_dir_process, get_default_metadata_path(), path_save_video)
@@ -610,7 +635,8 @@ def api_upload_video():
             "metadata_file": metadata_file,
             "embeddings_file": embeddings_file,
             "video_path": path_save_video,
-            "frames_dir": frame_dir
+            "frames_dir": frame_dir,
+            "embedding_model": model_name
         }
         
         # Save the updated mapping
@@ -623,6 +649,7 @@ def api_upload_video():
                 - Embeddings saved to: {embeddings_file}
                 - Metadata saved to: {metadata_file}
                 - Video mapping updated with {len(video_data_mapping)} videos total
+                - Embedding model: {model_name}
                 """)
         
         # Tạo thông tin video response
@@ -633,7 +660,8 @@ def api_upload_video():
             "uploadDate": time.strftime('%Y-%m-%d'),
             "size": f"{os.path.getsize(path_save_video) // (1024 * 1024)} MB",
             "resolution": get_video_resolution(path_save_video),
-            "duration": get_video_duration(path_save_video)
+            "duration": get_video_duration(path_save_video),
+            "embedding_model": model_name
         }
        
         return jsonify({
@@ -866,6 +894,60 @@ def api_get_available_videos():
 def health_check():
     """Health check endpoint."""
     return jsonify({"status": "ok"})
+
+@app.route('/api/models', methods=['GET'])
+def api_get_models():
+    """API lấy danh sách các mô hình CLIP có sẵn."""
+    try:
+        models = [
+            {
+                "id": "original",
+                "name": "CLIP Original (ViT-B/32)",
+                "description": "Mô hình CLIP gốc từ OpenAI"
+            }
+        ]
+        
+        # Thêm mô hình tinh chỉnh nếu có sẵn
+        if embedding_service.finetuned_model is not None:
+            models.append({
+                "id": "finetuned",
+                "name": "CLIP Fine-tuned",
+                "description": "Mô hình CLIP đã được tinh chỉnh cho dữ liệu nhạy cảm"
+            })
+        
+        return jsonify(models)
+    except Exception as e:
+        print(f"Error getting models: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/models/active', methods=['GET', 'POST'])
+def api_active_model():
+    """API để lấy hoặc đặt mô hình CLIP đang hoạt động."""
+    try:
+        if request.method == 'GET':
+            return jsonify({
+                "active_model": embedding_service.get_active_model_name()
+            })
+        elif request.method == 'POST':
+            data = request.json
+            model_name = data.get('model')
+            if not model_name:
+                return jsonify({"error": "Model name is required"}), 400
+            
+            success = embedding_service.set_active_model(model_name)
+            if success:
+                return jsonify({
+                    "success": True,
+                    "active_model": embedding_service.get_active_model_name()
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": f"Failed to set model to {model_name}"
+                }), 400
+    except Exception as e:
+        print(f"Error with active model API: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)

@@ -3,6 +3,7 @@ import { File, Upload, Calendar, Film, X, Loader } from 'lucide-react';
 import { useVideo } from '../context/VideoContext';
 import { formatDuration } from '../utils/formatters';
 import { VideoData } from '../types';
+import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -12,6 +13,9 @@ export const VideoLibrary = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Xử lý chọn video
   const handleSelectVideo = (video: VideoData) => {
@@ -32,41 +36,67 @@ export const VideoLibrary = () => {
   };
 
   // Xử lý khi file được chọn
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
+    setError(null);
+    setUploadProgress(0);
+  };
+
+  // Trong hàm handleUpload, thêm phần để lấy mô hình đã chọn và gửi lên server
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      setError("Please select a video file");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    setError(null);
+
     try {
-      setIsUploading(true);
-      setUploadProgress(10); // Bắt đầu với 10%
+      const formData = new FormData();
+      formData.append('video', selectedFile);
       
-      // Giả lập tiến trình upload
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 1000);
+      // Thêm model vào formData
+      const activeModelResponse = await axios.get(`${API_BASE_URL}/models/active`);
+      const activeModel = activeModelResponse.data?.active_model || 'original';
+      formData.append('model', activeModel);
       
-      // Upload file
-      await uploadVideo(file);
+      const config = {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        onUploadProgress: (progressEvent: any) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(percentCompleted);
+        }
+      };
+
+      const response = await axios.post(`${API_BASE_URL}/upload-video`, formData, config);
       
-      // Hoàn thành
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-      setTimeout(() => {
+      if (response.data && response.data.status === 'success') {
         setIsUploading(false);
-        setUploadProgress(0);
-        setShowUpload(false);
-      }, 1000);
-      
-    } catch (error) {
-      console.error('Upload failed:', error);
+        setUploadSuccess(true);
+        setSelectedFile(null);
+        
+        // Add new video to videos list
+        if (response.data.video) {
+          uploadVideo(response.data.video);
+        }
+        
+        // Show notification for a few seconds
+        setTimeout(() => {
+          setUploadSuccess(false);
+          setShowUpload(false);
+        }, 3000);
+      }
+    } catch (err: any) {
       setIsUploading(false);
-      setUploadProgress(0);
+      setError(err.response?.data?.error || "Error uploading video. Please try again.");
+      console.error("Error uploading video:", err);
     }
   };
 
@@ -207,16 +237,49 @@ export const VideoLibrary = () => {
                 <input
                   type="file"
                   accept="video/*"
-                  onChange={handleFileChange}
+                  onChange={handleFileSelect}
                   className="hidden"
                   ref={fileInputRef}
                 />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-400 transition-colors duration-200"
-                >
-                  Browse Files
-                </button>
+                
+                {selectedFile ? (
+                  <div className="mb-4">
+                    <div className="p-3 bg-slate-700 rounded-md flex items-center">
+                      <Film size={16} className="text-teal-400 mr-2" />
+                      <span className="text-sm truncate">{selectedFile.name}</span>
+                    </div>
+                  </div>
+                ) : null}
+                
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 border border-slate-600 text-slate-300 rounded-md hover:bg-slate-700 transition-colors duration-200"
+                  >
+                    Browse Files
+                  </button>
+                  
+                  {selectedFile && (
+                    <button
+                      onClick={handleUpload}
+                      className="px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-400 transition-colors duration-200"
+                    >
+                      Upload
+                    </button>
+                  )}
+                </div>
+                
+                {error && (
+                  <div className="mt-4 p-2 bg-red-500/20 border border-red-500/30 rounded-md">
+                    <p className="text-sm text-red-300">{error}</p>
+                  </div>
+                )}
+                
+                {uploadSuccess && (
+                  <div className="mt-4 p-2 bg-green-500/20 border border-green-500/30 rounded-md">
+                    <p className="text-sm text-green-300">Video uploaded successfully!</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

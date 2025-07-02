@@ -105,12 +105,14 @@ def query_by_text_clip(query, top_k, search_top_frames, extract_query_confidence
                 
                 # Format event cho frontend
                 event = format_event_for_frontend(frame_data_copy)
+                # Đảm bảo clip_similarity được đặt đúng
+                event["clip_similarity"] = confidence
                 results.append(event)
             except Exception as e:
                 print(f"Error processing frame {frame_name}: {e}")
         
-        # Sắp xếp theo confidence (giảm dần)
-        results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        # Sắp xếp theo clip_similarity (giảm dần)
+        results.sort(key=lambda x: x.get("clip_similarity", 0), reverse=True)
         return results[:top_k]
     except Exception as e:
         print(f"Error in text clip query: {e}")
@@ -165,6 +167,8 @@ def query_by_text_with_adaptive_threshold(query, adaptive_threshold, top_k, sear
                         frame_data_copy['clip_similarity'] = confidence
                         
                         event = format_event_for_frontend(frame_data_copy)
+                        # Đảm bảo clip_similarity được đặt đúng
+                        event["clip_similarity"] = confidence
                         semantic_results.append(event)
             except Exception as e:
                 print(f"Error processing frame {frame_name}: {e}")
@@ -172,8 +176,8 @@ def query_by_text_with_adaptive_threshold(query, adaptive_threshold, top_k, sear
         # In thông tin debug
         print(f"Found {len(semantic_results)} results after applying threshold {adaptive_threshold}")
         
-        # Sắp xếp kết quả theo confidence từ cao đến thấp
-        semantic_results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        # Sắp xếp kết quả theo clip_similarity từ cao đến thấp
+        semantic_results.sort(key=lambda x: x.get("clip_similarity", 0), reverse=True)
         
         # Trả về top_k kết quả
         return semantic_results[:top_k]
