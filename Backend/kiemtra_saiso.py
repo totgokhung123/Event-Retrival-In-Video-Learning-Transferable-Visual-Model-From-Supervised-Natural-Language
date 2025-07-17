@@ -33,6 +33,7 @@ def main():
             score = None
             print(f"[Warning] Không thể xử lý: {img_path} → {e}")
 
+			
         results.append({
             "image_path": img_path,
             "caption": caption,
