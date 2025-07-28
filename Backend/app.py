@@ -31,6 +31,22 @@ from query_strategies import (
 )
 from werkzeug.utils import secure_filename
 
+def get_image_metadata(image_path):
+    """Lấy metadata cơ bản của ảnh."""
+    try:
+        with Image.open(image_path) as img:
+            width, height = img.size
+            return {
+                "size_bytes": os.path.getsize(image_path),
+                "mime_type": Image.MIME.get(img.format, "unknown"),
+                "width": width,
+                "height": height,
+                "num_channels": len(img.getbands()),
+            }
+    except (UnidentifiedImageError, OSError) as e:
+        print(f"Không thể đọc metadata từ file {image_path}: {e}")
+        return None
+
 # Import service initializer
 from services import initialize_services
 
