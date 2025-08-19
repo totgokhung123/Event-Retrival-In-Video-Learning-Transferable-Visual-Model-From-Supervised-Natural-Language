@@ -133,14 +133,6 @@ pip install torch torchvision transformers pandas openpyxl matplotlib tqdm pillo
 pip install git+https://github.com/openai/CLIP.git
 ```
 
-## Sử dụng
-
-Chạy lệnh sau để so sánh các model:
-
-```bash
-python compare_models.py --test_file test_caption_image_translated.xlsx --finetuned_model_path /path/to/your/model.pt --output_dir results --use_finetuned --use_clip --use_blip2 --use_vit
-```
-
 ### Các tham số:
 
 - `--test_file`: Đường dẫn đến file excel test (bắt buộc)
@@ -397,4 +389,5 @@ python app.py
 cd Frontend
 npm run dev
 ``` 
+
 Chú ý: đảm bảo app.py và frontend chạy song song thông báo server sẵn sàng thì mới load web được. 
